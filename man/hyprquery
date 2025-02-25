@@ -33,15 +33,15 @@ Output result in JSON format.
 .SH EXAMPLES
 Query a configuration value from a config file:
 .PP
-hyprquery --query some_key config.json
+hyq --query some_key config.json
 .PP
 Query a configuration value with a schema file:
 .PP
-hyprquery --query some_key config.json --schema schema.json
+hyq --query some_key config.json --schema schema.json
 .PP
 Output the result in JSON format:
 .PP
-hyprquery --query some_key config.json --json
+hyq --query some_key config.json --json
 
 .SH AUTHOR
 Written by Your Name.

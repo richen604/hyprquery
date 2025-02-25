@@ -18,7 +18,7 @@ make
 ## Usage
 
 ```sh
-hyprquery --query <query> config_file [--schema <schema_file>] [--allow-missing] [--get-defaults] [--strict] [--json]
+hyq --query <query> config_file [--schema <schema_file>] [--allow-missing] [--get-defaults] [--strict] [--json]
 ```
 
 ### Options
@@ -36,17 +36,17 @@ hyprquery --query <query> config_file [--schema <schema_file>] [--allow-missing]
 Query a configuration value from a config file:
 
 ```sh
-hyprquery --query some_key config.json
+hyq --query some_key config.json
 ```
 
 Query a configuration value with a schema file:
 
 ```sh
-hyprquery --query some_key config.json --schema schema.json
+hyq --query some_key config.json --schema schema.json
 ```
 
 Output the result in JSON format:
 
 ```sh
-hyprquery --query some_key config.json --json
+hyq --query some_key config.json --json
 ```
