@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include <hyprlang.hpp>
+#include "../build/hyprlang_install/include/hyprlang.hpp"
 
 static Hyprlang::CConfig *pConfig = nullptr;
 static std::string currentPath = "";
