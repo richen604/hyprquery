@@ -22,6 +22,9 @@ set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1)
 include(FetchContent)
 include(ExternalProject)
 
+# Set the output directory for the binary
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/release)
+
 # Download and configure nlohmann_json
 FetchContent_Declare(
   nlohmann_json
@@ -46,22 +49,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cli11)
 
-# Download and configure hyprutils
-ExternalProject_Add(
-  hyprutils
-  GIT_REPOSITORY https://github.com/hyprwm/hyprutils.git
-  GIT_TAG main
-  CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/hyprutils_install
-  BUILD_COMMAND ${CMAKE_COMMAND} --build . --target install -j
-  INSTALL_COMMAND ""
-)
-
 # Download and configure hyprlang
 ExternalProject_Add(
   hyprlang
   GIT_REPOSITORY https://github.com/hyprwm/hyprlang.git
   GIT_TAG main
-  DEPENDS hyprutils
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/hyprlang_install -DPKG_CONFIG_PATH=${CMAKE_BINARY_DIR}/hyprutils_install/lib/pkgconfig
   BUILD_COMMAND ${CMAKE_COMMAND} --build . --target install -j
   INSTALL_COMMAND ""

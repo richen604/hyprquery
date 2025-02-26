@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <glob.h>
 #include <iostream>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -18,7 +19,16 @@ std::string expandEnvVars(const std::string &path) {
   std::string result;
   result.reserve(path.size());
 
-  for (size_t i = 0; i < path.size(); ++i) {
+  size_t i = 0;
+  while (i < path.size()) {
+    if (path[i] == '~' && (i == 0 || path[i - 1] == '/')) {
+      const char *home = std::getenv("HOME");
+      if (home) {
+        result += home;
+        ++i;
+        continue;
+      }
+    }
     if (path[i] == '$') {
       size_t j = i + 1;
       while (j < path.size() && (std::isalnum(path[j]) || path[j] == '_')) {
@@ -29,22 +39,32 @@ std::string expandEnvVars(const std::string &path) {
       if (value) {
         result += value;
       }
-      i = j - 1;
+      i = j;
     } else {
       result += path[i];
+      ++i;
     }
   }
 
   return result;
 }
 
-std::filesystem::path resolvePath(const std::string &path) {
+std::vector<std::filesystem::path> resolvePath(const std::string &path) {
   std::string expandedPath = expandEnvVars(path);
-  std::filesystem::path fsPath(expandedPath);
-  if (fsPath.is_relative()) {
-    return std::filesystem::canonical(std::filesystem::current_path() / fsPath);
+  std::vector<std::filesystem::path> paths;
+
+  glob_t glob_result;
+  glob(expandedPath.c_str(), GLOB_TILDE, nullptr, &glob_result);
+  for (size_t i = 0; i < glob_result.gl_pathc; ++i) {
+    std::filesystem::path fsPath(glob_result.gl_pathv[i]);
+    if (fsPath.is_relative()) {
+      fsPath = std::filesystem::canonical(currentPath / fsPath);
+    }
+    paths.push_back(fsPath);
   }
-  return fsPath;
+  globfree(&glob_result);
+
+  return paths;
 }
 
 void addConfigValuesFromSchema(Hyprlang::CConfig &config,
@@ -58,7 +78,7 @@ void addConfigValuesFromSchema(Hyprlang::CConfig &config,
   nlohmann::json schemaJson;
   schemaFile >> schemaJson;
 
-  for (const auto &option : schemaJson["config_options"]) {
+  for (const auto &option : schemaJson["hyprlang_schema"]) {
     if (!option.contains("value") || !option.contains("type") ||
         !option.contains("data")) {
       std::cerr << "Invalid schema format" << std::endl;
@@ -105,8 +125,15 @@ void addConfigValuesFromSchema(Hyprlang::CConfig &config,
 
 static Hyprlang::CParseResult handleSource(const char *COMMAND,
                                            const char *VALUE) {
-  std::string PATH = resolvePath(currentPath + "/" + VALUE).string();
-  return pConfig->parseFile(PATH.c_str());
+  std::vector<std::filesystem::path> paths = resolvePath(VALUE);
+  for (const auto &path : paths) {
+    spdlog::debug("Parsing file: {}", path.string());
+    auto result = pConfig->parseFile(path.c_str());
+    if (result.error) {
+      return result;
+    }
+  }
+  return Hyprlang::CParseResult{};
 }
 
 struct QueryResult {
@@ -152,9 +179,9 @@ int main(int argc, char **argv, char **envp) {
 
   CLI11_PARSE(app, argc, argv);
 
-  configFilePath = resolvePath(configFilePath).string();
+  configFilePath = resolvePath(configFilePath).front().string();
   if (!schemaFilePath.empty()) {
-    schemaFilePath = resolvePath(schemaFilePath).string();
+    schemaFilePath = resolvePath(schemaFilePath).front().string();
   }
 
   Hyprlang::SConfigOptions options;
@@ -167,8 +194,8 @@ int main(int argc, char **argv, char **envp) {
     addConfigValuesFromSchema(config, schemaFilePath);
   }
 
-  config.addConfigValue(query.c_str(), (Hyprlang::STRING) "dynamic");
   config.registerHandler(&handleSource, "source", {.allowFlags = false});
+  config.addConfigValue(query.c_str(), (Hyprlang::STRING) "UNSET");
 
   config.commence();
 

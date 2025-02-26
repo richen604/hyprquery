@@ -11,11 +11,13 @@ git clone https://github.com/HyDE-Project/hyprquery.git
 cd hyprquery
 mkdir build
 cd build
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=Release ..
 make
 ```
 
 ## Usage
+
+hyprquery provides `hyq` as a binary.
 
 ```sh
 hyq --query <query> config_file [--schema <schema_file>] [--allow-missing] [--get-defaults] [--strict] [--json]
@@ -50,3 +52,10 @@ Output the result in JSON format:
 ```sh
 hyq --query some_key config.json --json
 ```
+
+## Schema
+
+As per as i'm dumb, I cannot find a way for hyprlang to just work like jq. Therefore we required a schema so we can parse the target file correctly.
+This is also helpful to handle data types and default fallbacks.
+
+See [schema](./schema).

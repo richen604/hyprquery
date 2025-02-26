@@ -1,5 +1,5 @@
 {
-  "config_options": [
+  "hyprlang_schema": [
     {
       "value": "general:border_size",
       "description": "size of the border around windows",
