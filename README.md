@@ -2,6 +2,15 @@
 
 HyprQuery is a configuration parser for hypr\* config files. It allows you to query configuration values from a specified config file and optionally use a schema file to add default values.
 
+## Why
+
+- I need a tool to parse hypr\* configuration that can be use for scripting
+- I want it to be using the native hyprlang lib so I won't maintain it.
+
+---
+
+There is nothing special with this implementation. I only want to add CLI interface to hyprlang configs without rewriting the whole hyprland parsing part.
+
 ## Installation
 
 To build HyprQuery, you need to have a C++ compiler and CMake installed. Follow these steps to build the project:
@@ -59,3 +68,11 @@ As per as i'm dumb, I cannot find a way for hyprlang to just work like jq. There
 This is also helpful to handle data types and default fallbacks.
 
 See [schema](./schema).
+
+## TODO
+
+- `--source` should follow paths correctly, as of now it is not working perfectly on multiple levels.
+
+## Contributions
+
+- Feel free to optimize this code.

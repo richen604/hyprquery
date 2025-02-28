@@ -11,9 +11,11 @@
 #include <vector>
 
 #include "../build/hyprlang_install/include/hyprlang.hpp"
+// #include <hyprlang.hpp>
 
 static Hyprlang::CConfig *pConfig = nullptr;
-static std::string currentPath = "";
+static std::string configDir = "";
+static bool strictMode = false;
 
 std::string expandEnvVars(const std::string &path) {
   std::string result;
@@ -53,16 +55,30 @@ std::vector<std::filesystem::path> resolvePath(const std::string &path) {
   std::string expandedPath = expandEnvVars(path);
   std::vector<std::filesystem::path> paths;
 
+  spdlog::debug("Expanded path: {}", expandedPath);
+
   glob_t glob_result;
-  glob(expandedPath.c_str(), GLOB_TILDE, nullptr, &glob_result);
+  glob(expandedPath.c_str(), GLOB_TILDE | GLOB_BRACE, nullptr, &glob_result);
   for (size_t i = 0; i < glob_result.gl_pathc; ++i) {
     std::filesystem::path fsPath(glob_result.gl_pathv[i]);
-    if (fsPath.is_relative()) {
-      fsPath = std::filesystem::canonical(currentPath / fsPath);
+    if (fsPath.is_relative() || fsPath.string().find("./") == 0) {
+      fsPath = std::filesystem::weakly_canonical(configDir / fsPath);
+    } else {
+      fsPath = std::filesystem::weakly_canonical(fsPath);
     }
-    paths.push_back(fsPath);
+    if (std::filesystem::exists(fsPath.parent_path())) {
+      paths.push_back(fsPath);
+    } else {
+      spdlog::warn("Directory does not exist: {}",
+                   fsPath.parent_path().string());
+    }
   }
   globfree(&glob_result);
+
+  spdlog::debug("Resolved paths: ");
+  for (const auto &p : paths) {
+    spdlog::debug("PATHS: {}  ::: {}", configDir, p.string());
+  }
 
   return paths;
 }
@@ -123,17 +139,44 @@ void addConfigValuesFromSchema(Hyprlang::CConfig &config,
   }
 }
 
-static Hyprlang::CParseResult handleSource(const char *COMMAND,
-                                           const char *VALUE) {
-  std::vector<std::filesystem::path> paths = resolvePath(VALUE);
+static Hyprlang::CParseResult handleSource(const char *command,
+                                           const char *rawpath) {
+  // Path Validation
+  if (strlen(rawpath) < 2) {
+    Hyprlang::CParseResult result;
+    result.setError("Invalid path length");
+    return result;
+  }
+
+  // Path Expansion
+  std::vector<std::filesystem::path> paths = resolvePath(rawpath);
+  if (paths.empty()) {
+    Hyprlang::CParseResult result;
+    result.setError("No valid paths found");
+    return result;
+  }
+
+  Hyprlang::CParseResult finalResult;
+
+  // File Validation and Parsing
   for (const auto &path : paths) {
+    if (!std::filesystem::is_regular_file(path)) {
+      Hyprlang::CParseResult result;
+      // result.setError("Path is not a regular file: " + path.string());
+      return result;
+    }
+
     spdlog::debug("Parsing file: {}", path.string());
     auto result = pConfig->parseFile(path.c_str());
     if (result.error) {
       return result;
     }
+
+    // Update the current path to the directory of the parsed file
+    configDir = path.parent_path().string();
   }
-  return Hyprlang::CParseResult{};
+
+  return finalResult;
 }
 
 struct QueryResult {
@@ -158,6 +201,27 @@ void printQueryResultAsPlainText(const QueryResult &result) {
 }
 
 int main(int argc, char **argv, char **envp) {
+  // Configure spdlog based on LOG_LEVEL environment variable
+  const char *logLevelEnv = std::getenv("LOG_LEVEL");
+  if (logLevelEnv) {
+    std::string logLevelStr(logLevelEnv);
+    if (logLevelStr == "debug") {
+      spdlog::set_level(spdlog::level::debug);
+    } else if (logLevelStr == "info") {
+      spdlog::set_level(spdlog::level::info);
+    } else if (logLevelStr == "warn") {
+      spdlog::set_level(spdlog::level::warn);
+    } else if (logLevelStr == "error") {
+      spdlog::set_level(spdlog::level::err);
+    } else if (logLevelStr == "critical") {
+      spdlog::set_level(spdlog::level::critical);
+    } else {
+      spdlog::set_level(spdlog::level::info); // Default to info level
+    }
+  } else {
+    spdlog::set_level(spdlog::level::info); // Default to info level
+  }
+
   CLI::App app{"hyprparser - A configuration parser for hypr* config files"};
 
   std::string query;
@@ -167,6 +231,7 @@ int main(int argc, char **argv, char **envp) {
   bool getDefaultKeys = false;
   bool strictMode = false;
   bool jsonOutput = false;
+  bool followSource = false;
 
   app.add_option("--query", query, "Query to execute")->required();
   app.add_option("config_file", configFilePath, "Configuration file")
@@ -176,10 +241,12 @@ int main(int argc, char **argv, char **envp) {
   app.add_flag("--get-defaults", getDefaultKeys, "Get default keys");
   app.add_flag("--strict", strictMode, "Enable strict mode");
   app.add_flag("--json,-j", jsonOutput, "Output result in JSON format");
+  app.add_flag("--source,-s", "follow the source command");
 
   CLI11_PARSE(app, argc, argv);
 
   configFilePath = resolvePath(configFilePath).front().string();
+  configDir = std::filesystem::path(configFilePath).parent_path().string();
   if (!schemaFilePath.empty()) {
     schemaFilePath = resolvePath(schemaFilePath).front().string();
   }
@@ -188,13 +255,20 @@ int main(int argc, char **argv, char **envp) {
   options = {.verifyOnly = getDefaultKeys ? 1 : 0, .allowMissingConfig = 1};
   Hyprlang::CConfig config(configFilePath.c_str(), options);
   pConfig = &config;
-  currentPath = std::filesystem::canonical(configFilePath).parent_path();
 
   if (!schemaFilePath.empty()) {
     addConfigValuesFromSchema(config, schemaFilePath);
   }
 
-  config.registerHandler(&handleSource, "source", {.allowFlags = false});
+  if (followSource) {
+
+    config.registerHandler(
+        [](const char *command, const char *value) -> Hyprlang::CParseResult {
+          return handleSource(command, value);
+        },
+        "source", {.allowFlags = false});
+  }
+
   config.addConfigValue(query.c_str(), (Hyprlang::STRING) "UNSET");
 
   config.commence();
