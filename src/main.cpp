@@ -6,6 +6,7 @@
 #include <fstream>
 #include <glob.h>
 #include <iostream>
+#include <map>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
@@ -200,6 +201,44 @@ void printQueryResultAsPlainText(const QueryResult &result) {
   std::cout << result.value << std::endl;
 }
 
+// Adding a function to parse variables directly from the config file
+std::map<std::string, std::string>
+parseVariablesFromFile(const std::string &filePath) {
+  std::map<std::string, std::string> variables;
+  std::ifstream configFile(filePath);
+
+  if (!configFile.is_open()) {
+    spdlog::error("Failed to open config file for variable parsing: {}",
+                  filePath);
+    return variables;
+  }
+
+  std::string line;
+  while (std::getline(configFile, line)) {
+    // Trim whitespace
+    line.erase(0, line.find_first_not_of(" \t"));
+
+    // Look for variable definitions ($VAR=value)
+    if (line.size() > 0 && line[0] == '$') {
+      size_t equalPos = line.find('=');
+      if (equalPos != std::string::npos) {
+        std::string varName = line.substr(0, equalPos);
+        std::string varValue = line.substr(equalPos + 1);
+
+        // Trim whitespace from value
+        varValue.erase(0, varValue.find_first_not_of(" \t"));
+        varValue.erase(varValue.find_last_not_of(" \t") + 1);
+
+        // Store in map
+        variables[varName] = varValue;
+        spdlog::debug("Found variable: {} = {}", varName, varValue);
+      }
+    }
+  }
+
+  return variables;
+}
+
 int main(int argc, char **argv, char **envp) {
   // Configure spdlog based on LOG_LEVEL environment variable
   const char *logLevelEnv = std::getenv("LOG_LEVEL");
@@ -251,6 +290,10 @@ int main(int argc, char **argv, char **envp) {
     schemaFilePath = resolvePath(schemaFilePath).front().string();
   }
 
+  // Parse variables from the config file before initializing Hyprlang
+  std::map<std::string, std::string> variables =
+      parseVariablesFromFile(configFilePath);
+
   Hyprlang::SConfigOptions options;
   options = {.verifyOnly = getDefaultKeys ? 1 : 0, .allowMissingConfig = 1};
   Hyprlang::CConfig config(configFilePath.c_str(), options);
@@ -261,7 +304,6 @@ int main(int argc, char **argv, char **envp) {
   }
 
   if (followSource) {
-
     config.registerHandler(
         [](const char *command, const char *value) -> Hyprlang::CParseResult {
           return handleSource(command, value);
@@ -269,7 +311,10 @@ int main(int argc, char **argv, char **envp) {
         "source", {.allowFlags = false});
   }
 
-  config.addConfigValue(query.c_str(), (Hyprlang::STRING) "UNSET");
+  // Make sure the variable will be parsed if it's referenced in the config
+  if (!query.empty() && query[0] != '$') {
+    config.addConfigValue(query.c_str(), (Hyprlang::STRING) "UNSET");
+  }
 
   config.commence();
 
@@ -281,32 +326,71 @@ int main(int argc, char **argv, char **envp) {
     }
   }
 
-  std::any value = config.getConfigValue(query.c_str());
   QueryResult result;
   result.key = query;
 
-  if (value.has_value()) {
-    if (value.type() == typeid(Hyprlang::INT)) {
-      result.value = std::to_string(std::any_cast<Hyprlang::INT>(value));
-      result.type = "INT";
-    } else if (value.type() == typeid(Hyprlang::FLOAT)) {
-      result.value = std::to_string(std::any_cast<Hyprlang::FLOAT>(value));
-      result.type = "FLOAT";
-    } else if (value.type() == typeid(Hyprlang::STRING)) {
-      result.value = std::any_cast<Hyprlang::STRING>(value);
-      result.type = "STRING";
-    } else if (value.type() == typeid(Hyprlang::VEC2)) {
-      Hyprlang::VEC2 vec = std::any_cast<Hyprlang::VEC2>(value);
-      result.value =
-          "[" + std::to_string(vec.x) + ", " + std::to_string(vec.y) + "]";
-      result.type = "VEC2";
+  // Check if the query is for a variable (starts with $)
+  if (!query.empty() && query[0] == '$') {
+    // First try to get from our parsed variables
+    auto varIt = variables.find(query);
+    if (varIt != variables.end()) {
+      result.value = varIt->second;
+      result.type = "STRING"; // Variables are typically treated as strings
     } else {
-      result.value = "Unknown";
-      result.type = "UNKNOWN";
+      // Fallback to Hyprlang's getConfigValue if not found in our map
+      std::any value = config.getConfigValue(query.c_str());
+
+      if (value.has_value()) {
+        if (value.type() == typeid(Hyprlang::INT)) {
+          result.value = std::to_string(std::any_cast<Hyprlang::INT>(value));
+          result.type = "INT";
+        } else if (value.type() == typeid(Hyprlang::FLOAT)) {
+          result.value = std::to_string(std::any_cast<Hyprlang::FLOAT>(value));
+          result.type = "FLOAT";
+        } else if (value.type() == typeid(Hyprlang::STRING)) {
+          result.value = std::any_cast<Hyprlang::STRING>(value);
+          result.type = "STRING";
+        } else if (value.type() == typeid(Hyprlang::VEC2)) {
+          Hyprlang::VEC2 vec = std::any_cast<Hyprlang::VEC2>(value);
+          result.value =
+              "[" + std::to_string(vec.x) + ", " + std::to_string(vec.y) + "]";
+          result.type = "VEC2";
+        } else {
+          result.value = "Unknown";
+          result.type = "UNKNOWN";
+        }
+      } else {
+        result.value = "NULL";
+        result.type = "NULL";
+      }
     }
   } else {
-    result.value = "NULL";
-    result.type = "NULL";
+    // Regular config value lookup (non-variable)
+    std::any value = config.getConfigValue(query.c_str());
+
+    if (value.has_value()) {
+      if (value.type() == typeid(Hyprlang::INT)) {
+        result.value = std::to_string(std::any_cast<Hyprlang::INT>(value));
+        result.type = "INT";
+      } else if (value.type() == typeid(Hyprlang::FLOAT)) {
+        result.value = std::to_string(std::any_cast<Hyprlang::FLOAT>(value));
+        result.type = "FLOAT";
+      } else if (value.type() == typeid(Hyprlang::STRING)) {
+        result.value = std::any_cast<Hyprlang::STRING>(value);
+        result.type = "STRING";
+      } else if (value.type() == typeid(Hyprlang::VEC2)) {
+        Hyprlang::VEC2 vec = std::any_cast<Hyprlang::VEC2>(value);
+        result.value =
+            "[" + std::to_string(vec.x) + ", " + std::to_string(vec.y) + "]";
+        result.type = "VEC2";
+      } else {
+        result.value = "Unknown";
+        result.type = "UNKNOWN";
+      }
+    } else {
+      result.value = "NULL";
+      result.type = "NULL";
+    }
   }
 
   if (jsonOutput) {
