@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
+#include <wordexp.h>
 
 #include "../build/hyprlang_install/include/hyprlang.hpp"
 // #include <hyprlang.hpp>
@@ -19,34 +20,25 @@ static std::string configDir = "";
 static bool strictMode = false;
 
 std::string expandEnvVars(const std::string &path) {
-  std::string result;
-  result.reserve(path.size());
+  wordexp_t p;
+  std::string result = path;
 
-  size_t i = 0;
-  while (i < path.size()) {
-    if (path[i] == '~' && (i == 0 || path[i - 1] == '/')) {
-      const char *home = std::getenv("HOME");
-      if (home) {
-        result += home;
-        ++i;
-        continue;
-      }
+  // Handle wordexp() special cases
+  // Replace $ with $$ for any $ that precedes { to avoid command substitution
+  size_t pos = 0;
+  while ((pos = result.find("${", pos)) != std::string::npos) {
+    result.insert(pos + 1, "$");
+    pos += 3; // Skip past the inserted $
+  }
+
+  // Use wordexp to handle environment variable expansion and tilde expansion
+  if (wordexp(result.c_str(), &p, WRDE_NOCMD) == 0) {
+    if (p.we_wordc > 0 && p.we_wordv[0] != nullptr) {
+      result = p.we_wordv[0];
     }
-    if (path[i] == '$') {
-      size_t j = i + 1;
-      while (j < path.size() && (std::isalnum(path[j]) || path[j] == '_')) {
-        ++j;
-      }
-      std::string var = path.substr(i + 1, j - i - 1);
-      const char *value = std::getenv(var.c_str());
-      if (value) {
-        result += value;
-      }
-      i = j;
-    } else {
-      result += path[i];
-      ++i;
-    }
+    wordfree(&p);
+  } else {
+    spdlog::warn("Failed to expand environment variables in path: {}", path);
   }
 
   return result;
