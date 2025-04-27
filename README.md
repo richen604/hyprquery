@@ -120,7 +120,7 @@ hyq -s --query "general:border_size" ~/.config/hypr/hyprland.conf
 
 ## Schema Files
 
-Schema files define the format and default values for configuration options. They are JSON files with the following structure:
+Schema files define the format and default values for configuration options. They are JSON files an example is can be derived from [Hyprland's ConfigDescriptions.hpp](https://github .com/hyprwm/Hyprland/blob/main/src/config/ConfigDescriptions.hpp) and converted to JSON format for easier use. The structure is as follows:
 
 ```json
 {
