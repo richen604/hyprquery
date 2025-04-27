@@ -12,8 +12,8 @@
 #include <vector>
 #include <wordexp.h>
 
-#include "../build/hyprlang_install/include/hyprlang.hpp"
-// #include <hyprlang.hpp>
+// Include our compatibility header
+#include "hyprlang_compat.hpp"
 
 static Hyprlang::CConfig *pConfig = nullptr;
 static std::string configDir = "";
@@ -378,59 +378,15 @@ int main(int argc, char **argv, char **envp) {
       result.type = "STRING"; // Variables are typically treated as strings
     } else {
       // Fallback to Hyprlang's getConfigValue if not found in our map
-      std::any value = config.getConfigValue(query.c_str());
-
-      if (value.has_value()) {
-        if (value.type() == typeid(Hyprlang::INT)) {
-          result.value = std::to_string(std::any_cast<Hyprlang::INT>(value));
-          result.type = "INT";
-        } else if (value.type() == typeid(Hyprlang::FLOAT)) {
-          result.value = std::to_string(std::any_cast<Hyprlang::FLOAT>(value));
-          result.type = "FLOAT";
-        } else if (value.type() == typeid(Hyprlang::STRING)) {
-          result.value = std::any_cast<Hyprlang::STRING>(value);
-          result.type = "STRING";
-        } else if (value.type() == typeid(Hyprlang::VEC2)) {
-          Hyprlang::VEC2 vec = std::any_cast<Hyprlang::VEC2>(value);
-          result.value =
-              "[" + std::to_string(vec.x) + ", " + std::to_string(vec.y) + "]";
-          result.type = "VEC2";
-        } else {
-          result.value = "Unknown";
-          result.type = "UNKNOWN";
-        }
-      } else {
-        result.value = "NULL";
-        result.type = "NULL";
-      }
+      std::any value = HyprlangCompat::getConfigValue(&config, query.c_str());
+      result.value = HyprlangCompat::convertValueToString(value);
+      result.type = HyprlangCompat::getValueTypeName(value);
     }
   } else {
     // Regular config value lookup (non-variable)
-    std::any value = config.getConfigValue(query.c_str());
-
-    if (value.has_value()) {
-      if (value.type() == typeid(Hyprlang::INT)) {
-        result.value = std::to_string(std::any_cast<Hyprlang::INT>(value));
-        result.type = "INT";
-      } else if (value.type() == typeid(Hyprlang::FLOAT)) {
-        result.value = std::to_string(std::any_cast<Hyprlang::FLOAT>(value));
-        result.type = "FLOAT";
-      } else if (value.type() == typeid(Hyprlang::STRING)) {
-        result.value = std::any_cast<Hyprlang::STRING>(value);
-        result.type = "STRING";
-      } else if (value.type() == typeid(Hyprlang::VEC2)) {
-        Hyprlang::VEC2 vec = std::any_cast<Hyprlang::VEC2>(value);
-        result.value =
-            "[" + std::to_string(vec.x) + ", " + std::to_string(vec.y) + "]";
-        result.type = "VEC2";
-      } else {
-        result.value = "Unknown";
-        result.type = "UNKNOWN";
-      }
-    } else {
-      result.value = "NULL";
-      result.type = "NULL";
-    }
+    std::any value = HyprlangCompat::getConfigValue(&config, query.c_str());
+    result.value = HyprlangCompat::convertValueToString(value);
+    result.type = HyprlangCompat::getValueTypeName(value);
   }
 
   if (jsonOutput) {

@@ -1,78 +1,166 @@
-# HyprQuery
+# HyprQuery (hyq)
 
-HyprQuery is a configuration parser for hypr\* config files. It allows you to query configuration values from a specified config file and optionally use a schema file to add default values.
+A command-line utility for querying configuration values from Hyprland and hyprland-related configuration files using the hyprlang parsing library.
 
-## Why
+## Features
 
-- I need a tool to parse hypr\* configuration that can be use for scripting
-- I want it to be using the native hyprlang lib so I won't maintain it.
-
----
-
-There is nothing special with this implementation. I only want to add CLI interface to hyprlang configs without rewriting the whole hyprland parsing part.
+- Query any value from Hyprland configuration files
+- Support for variables and nested includes via `source` directives
+- Load schema files to provide default values
+- JSON output format for integration with other tools
+- Environment variable expansion in file paths
+- Cross-platform compatibility across Linux distributions
 
 ## Installation
 
-To build HyprQuery, you need to have a C++ compiler and CMake installed. Follow these steps to build the project:
+### Dependencies
 
-```sh
-git clone https://github.com/HyDE-Project/hyprquery.git
+- C++20 compatible compiler
+- CMake 3.15+
+- pkg-config (optional, for system hyprlang detection)
+- hyprlang (automatically downloaded if not found on system)
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/username/hyprquery.git
 cd hyprquery
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make
+
+# Create build directory
+mkdir build && cd build
+
+# Configure the project
+cmake ..
+
+# Build
+make -j$(nproc)
+
+# Install (optional)
+sudo make install
+```
+
+### Build Options
+
+- `USE_SYSTEM_HYPRLANG` (ON/OFF): Whether to use system-installed hyprlang or build from source. Default: ON
+- `HYPRLANG_VERSION` (string): Specific version of hyprlang to use when building from source. Default: "v0.6.0"
+- `STRICT_MODE` (ON/OFF): Enable strict mode checks. Default: OFF
+
+Example:
+
+```bash
+# Use a specific version of hyprlang
+cmake -DHYPRLANG_VERSION=v0.7.0 ..
+
+# Force building hyprlang from source even if system version exists
+cmake -DUSE_SYSTEM_HYPRLANG=OFF ..
+```
+
+### Distribution Packages
+
+Debian/Ubuntu:
+
+```
+# Coming soon
+```
+
+Arch Linux:
+
+```
+# Coming soon
 ```
 
 ## Usage
 
-hyprquery provides `hyq` as a binary.
+Basic syntax:
 
-```sh
-hyq --query <query> config_file [--schema <schema_file>] [--allow-missing] [--get-defaults] [--strict] [--json]
+```
+hyq [OPTIONS] --query KEY CONFIG_FILE
+```
+
+### Examples
+
+Query a simple value:
+
+```bash
+hyq --query "general:border_size" ~/.config/hypr/hyprland.conf
+```
+
+Query with JSON output:
+
+```bash
+hyq --json --query "decoration:blur:enabled" ~/.config/hypr/hyprland.conf
+```
+
+Query with a schema file:
+
+```bash
+hyq --schema ~/.config/hypr/schema.json --query "general:gaps_in" ~/.config/hypr/hyprland.conf
+```
+
+Follow source directives:
+
+```bash
+hyq -s --query "general:border_size" ~/.config/hypr/hyprland.conf
 ```
 
 ### Options
 
-- `--query <query>`: Query to execute (required).
-- `config_file`: Path to the configuration file (required).
-- `--schema <schema_file>`: Path to the schema file.
-- `--allow-missing`: Allow missing values.
-- `--get-defaults`: Get default keys.
-- `--strict`: Enable strict mode.
-- `--json, -j`: Output result in JSON format.
+- `--query KEY`: Specify the key to query from the config file
+- `--schema PATH`: Load a schema file with default values
+- `--allow-missing`: Don't fail if the value is missing
+- `--get-defaults`: Get default keys from schema
+- `--strict`: Enable strict mode validation
+- `--json`, `-j`: Output result in JSON format
+- `--source`, `-s`: Follow source directives in config files
 
-### Examples
+### Environment Variables
 
-Query a configuration value from a config file:
+- `LOG_LEVEL`: Set the log level (debug, info, warn, error, critical)
 
-```sh
-hyq --query some_key config.json
+## Schema Files
+
+Schema files define the format and default values for configuration options. They are JSON files with the following structure:
+
+```json
+{
+  "hyprlang_schema": [
+    {
+      "value": "general:border_size",
+      "type": "INT",
+      "data": {
+        "default": 2,
+        "min": 0,
+        "max": 20
+      }
+    },
+    {
+      "value": "general:gaps_in",
+      "type": "INT",
+      "data": {
+        "default": 5,
+        "min": 0,
+        "max": 50
+      }
+    }
+  ]
+}
 ```
 
-Query a configuration value with a schema file:
+## ABI Compatibility
 
-```sh
-hyq --query some_key config.json --schema schema.json
-```
+HyprQuery is designed to work with different versions of hyprlang by:
 
-Output the result in JSON format:
+1. Preferring system-installed hyprlang when available
+2. Falling back to building a specific version from source
+3. Using a compatibility layer to handle API/ABI differences
 
-```sh
-hyq --query some_key config.json --json
-```
+When building, you can specify which version of hyprlang to use with the `HYPRLANG_VERSION` CMake option.
 
-## Schema
+## License
 
-As per as i'm dumb, I cannot find a way for hyprlang to just work like jq. Therefore we required a schema so we can parse the target file correctly.
-This is also helpful to handle data types and default fallbacks.
+[MIT License](LICENSE)
 
-See [schema](./schema).
+## Contributing
 
-## TODO
-
-- `--source` should follow paths correctly, as of now it is not working perfectly on multiple levels.
-
-## Contributions
-
-- Feel free to optimize this code.
+Contributions are welcome! Please feel free to submit a Pull Request.
