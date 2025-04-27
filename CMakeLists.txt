@@ -1,5 +1,13 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.10)
 project(hyprquery VERSION 0.1.0)
+
+# Override CMake policy to handle dependencies with older minimum CMake version requirements
+if(POLICY CMP0025)
+  cmake_policy(SET CMP0025 NEW)
+endif()
+
+# Tell CMake to try configuring anyway, even for dependencies requiring older CMake
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 # Set the C++ standard
 set(CMAKE_CXX_STANDARD 23)
