@@ -50,10 +50,36 @@ std::vector<std::filesystem::path> resolvePath(const std::string &path) {
 
   spdlog::debug("Expanded path: {}", expandedPath);
 
+  // Handle case where the path doesn't exist
+  if (expandedPath.empty()) {
+    spdlog::error("Path is empty after expansion: {}", path);
+    return paths;
+  }
+
   glob_t glob_result;
-  glob(expandedPath.c_str(), GLOB_TILDE | GLOB_BRACE, nullptr, &glob_result);
+  memset(&glob_result, 0, sizeof(glob_t));
+
+  int ret = glob(expandedPath.c_str(), GLOB_TILDE | GLOB_BRACE, nullptr,
+                 &glob_result);
+
+  if (ret != 0) {
+    if (ret == GLOB_NOMATCH) {
+      spdlog::warn("No matches found for path: {}", expandedPath);
+    } else {
+      spdlog::error("Glob error for pattern: {}", expandedPath);
+    }
+    // Even if glob fails, try to use the path directly as a fallback
+    std::filesystem::path fallbackPath(expandedPath);
+    if (std::filesystem::exists(fallbackPath.parent_path())) {
+      paths.push_back(fallbackPath);
+    }
+    globfree(&glob_result);
+    return paths;
+  }
+
   for (size_t i = 0; i < glob_result.gl_pathc; ++i) {
-    std::filesystem::path fsPath(glob_result.gl_pathv[i]);
+    std::string pathStr = glob_result.gl_pathv[i];
+    std::filesystem::path fsPath(pathStr);
     if (fsPath.is_relative() || fsPath.string().find("./") == 0) {
       fsPath = std::filesystem::weakly_canonical(configDir / fsPath);
     } else {
@@ -276,7 +302,22 @@ int main(int argc, char **argv, char **envp) {
 
   CLI11_PARSE(app, argc, argv);
 
-  configFilePath = resolvePath(configFilePath).front().string();
+  auto resolvedPaths = resolvePath(configFilePath);
+  if (resolvedPaths.empty()) {
+    std::cerr << "Error: Could not resolve configuration file path: "
+              << configFilePath << std::endl;
+    return 1;
+  }
+
+  configFilePath = resolvedPaths.front().string();
+
+  // Check if the input config file exists
+  if (!std::filesystem::exists(configFilePath)) {
+    std::cerr << "Error: Configuration file does not exist: " << configFilePath
+              << std::endl;
+    return 1;
+  }
+
   configDir = std::filesystem::path(configFilePath).parent_path().string();
   if (!schemaFilePath.empty()) {
     schemaFilePath = resolvePath(schemaFilePath).front().string();
