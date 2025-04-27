@@ -19,6 +19,13 @@ static Hyprlang::CConfig *pConfig = nullptr;
 static std::string configDir = "";
 static bool strictMode = false;
 
+// Adding a global map to store all variables from all sourced files
+static std::map<std::string, std::string> g_allVariables;
+
+// Forward declare parseVariablesFromFile to fix compilation error
+std::map<std::string, std::string>
+parseVariablesFromFile(const std::string &filePath);
+
 std::string expandEnvVars(const std::string &path) {
   wordexp_t p;
   std::string result = path;
@@ -224,6 +231,9 @@ static Hyprlang::CParseResult handleSource(const char *command,
     // Set the config directory to the parent of the file we're parsing
     configDir = std::filesystem::path(filepath).parent_path().string();
 
+    // Parse variables from the sourced file
+    auto sourcedVariables = parseVariablesFromFile(filepath);
+
     // Parse the file
     auto parseResult = pConfig->parseFile(filepath.c_str());
 
@@ -270,7 +280,8 @@ void printQueryResultAsPlainText(const QueryResult &result) {
   std::cout << result.value << std::endl;
 }
 
-// Adding a function to parse variables directly from the config file
+// Updating the parseVariablesFromFile function to store variables in both the
+// local and global maps
 std::map<std::string, std::string>
 parseVariablesFromFile(const std::string &filePath) {
   std::map<std::string, std::string> variables;
@@ -298,8 +309,9 @@ parseVariablesFromFile(const std::string &filePath) {
         varValue.erase(0, varValue.find_first_not_of(" \t"));
         varValue.erase(varValue.find_last_not_of(" \t") + 1);
 
-        // Store in map
+        // Store in maps
         variables[varName] = varValue;
+        g_allVariables[varName] = varValue; // Store in the global map too
         spdlog::debug("Found variable: {} = {}", varName, varValue);
       }
     }
@@ -432,16 +444,27 @@ int main(int argc, char **argv, char **envp) {
 
   // Check if the query is for a variable (starts with $)
   if (!query.empty() && query[0] == '$') {
-    // First try to get from our parsed variables
+    // First try to get from our local variables (from main config file)
     auto varIt = variables.find(query);
     if (varIt != variables.end()) {
       result.value = varIt->second;
       result.type = "STRING"; // Variables are typically treated as strings
     } else {
-      // Fallback to Hyprlang's getConfigValue if not found in our map
-      std::any value = HyprlangCompat::getConfigValue(&config, query.c_str());
-      result.value = HyprlangCompat::convertValueToString(value);
-      result.type = HyprlangCompat::getValueTypeName(value);
+      // If not in local variables, check the global variable map that contains
+      // variables from all sourced files
+      auto globalVarIt = g_allVariables.find(query);
+      if (globalVarIt != g_allVariables.end()) {
+        result.value = globalVarIt->second;
+        result.type = "STRING";
+        spdlog::debug("Found variable in sourced file: {} = {}", query,
+                      result.value);
+      } else {
+        // Finally fallback to Hyprlang's getConfigValue if not found in any
+        // variable map
+        std::any value = HyprlangCompat::getConfigValue(&config, query.c_str());
+        result.value = HyprlangCompat::convertValueToString(value);
+        result.type = HyprlangCompat::getValueTypeName(value);
+      }
     }
   } else {
     // Regular config value lookup (non-variable)
