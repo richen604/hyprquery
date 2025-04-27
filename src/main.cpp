@@ -206,6 +206,7 @@ struct QueryResult {
 };
 
 void printQueryResultAsJson(const QueryResult &result) {
+  // In JSON mode, we will output NULL results
   nlohmann::json jsonResult;
   jsonResult["key"] = result.key;
   jsonResult["val"] = result.value;
@@ -216,6 +217,12 @@ void printQueryResultAsJson(const QueryResult &result) {
 }
 
 void printQueryResultAsPlainText(const QueryResult &result) {
+  // In plain text mode, don't output anything for NULL results
+  if (result.type == "NULL") {
+    spdlog::debug("Query result is NULL for key: {}", result.key);
+    return;
+  }
+
   std::cout << result.value << std::endl;
 }
 
@@ -432,5 +439,10 @@ int main(int argc, char **argv, char **envp) {
     printQueryResultAsPlainText(result);
   }
 
+  // If the result is NULL, log it at debug level and return non-zero exit code
+  if (result.type == "NULL") {
+    spdlog::debug("Query '{}' returned NULL", query);
+    return 1;
+  }
   return 0;
 }
