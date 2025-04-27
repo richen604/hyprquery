@@ -160,42 +160,86 @@ void addConfigValuesFromSchema(Hyprlang::CConfig &config,
 
 static Hyprlang::CParseResult handleSource(const char *command,
                                            const char *rawpath) {
-  // Path Validation
-  if (strlen(rawpath) < 2) {
-    Hyprlang::CParseResult result;
-    result.setError("Invalid path length");
+  Hyprlang::CParseResult result;
+  std::string path = rawpath;
+
+  if (path.length() < 2) {
+    result.setError("source= path too short or empty");
     return result;
   }
 
-  // Path Expansion
-  std::vector<std::filesystem::path> paths = resolvePath(rawpath);
-  if (paths.empty()) {
-    Hyprlang::CParseResult result;
-    result.setError("No valid paths found");
+  // Save the current config directory
+  std::string configDirBackup = configDir;
+
+  // Path Expansion with glob
+  std::unique_ptr<glob_t, void (*)(glob_t *)> glob_buf{
+      static_cast<glob_t *>(calloc(1, sizeof(glob_t))), [](glob_t *g) {
+        if (g) {
+          globfree(g);
+          free(g);
+        }
+      }};
+
+  // Get absolute path
+  std::string absolutePath = path;
+  if (path[0] == '~') {
+    const char *home = getenv("HOME");
+    if (home)
+      absolutePath = std::string(home) + path.substr(1);
+  } else if (path[0] != '/') {
+    // Handle relative paths
+    absolutePath = configDir + "/" + path;
+  }
+
+  spdlog::debug("Source: resolving path pattern: {}", absolutePath);
+
+  if (glob(absolutePath.c_str(), GLOB_TILDE, nullptr, glob_buf.get()) != 0) {
+    globfree(glob_buf.get());
+    result.setError(
+        ("source= found no matching files for pattern: " + path).c_str());
     return result;
   }
 
-  Hyprlang::CParseResult finalResult;
+  std::string errorsFromParsing;
 
-  // File Validation and Parsing
-  for (const auto &path : paths) {
-    if (!std::filesystem::is_regular_file(path)) {
-      Hyprlang::CParseResult result;
-      // result.setError("Path is not a regular file: " + path.string());
-      return result;
+  // Process each matching file
+  for (size_t i = 0; i < glob_buf->gl_pathc; i++) {
+    std::string filepath = glob_buf->gl_pathv[i];
+
+    if (!std::filesystem::is_regular_file(filepath)) {
+      if (std::filesystem::exists(filepath)) {
+        spdlog::debug("Source: skipping non-file {}", filepath);
+        continue;
+      }
+
+      spdlog::error("Source: file doesn't exist: {}", filepath);
+      if (errorsFromParsing.empty()) {
+        errorsFromParsing = "source= file doesn't exist: " + filepath;
+      }
+      continue;
     }
 
-    spdlog::debug("Parsing file: {}", path.string());
-    auto result = pConfig->parseFile(path.c_str());
-    if (result.error) {
-      return result;
-    }
+    spdlog::debug("Parsing source file: {}", filepath);
 
-    // Update the current path to the directory of the parsed file
-    configDir = path.parent_path().string();
+    // Set the config directory to the parent of the file we're parsing
+    configDir = std::filesystem::path(filepath).parent_path().string();
+
+    // Parse the file
+    auto parseResult = pConfig->parseFile(filepath.c_str());
+
+    if (parseResult.error && errorsFromParsing.empty()) {
+      errorsFromParsing = parseResult.getError();
+    }
   }
 
-  return finalResult;
+  // Restore the original directory context
+  configDir = configDirBackup;
+
+  if (!errorsFromParsing.empty()) {
+    result.setError(errorsFromParsing.c_str());
+  }
+
+  return result;
 }
 
 struct QueryResult {
@@ -305,7 +349,7 @@ int main(int argc, char **argv, char **envp) {
   app.add_flag("--get-defaults", getDefaultKeys, "Get default keys");
   app.add_flag("--strict", strictMode, "Enable strict mode");
   app.add_flag("--json,-j", jsonOutput, "Output result in JSON format");
-  app.add_flag("--source,-s", "follow the source command");
+  app.add_flag("--source,-s", followSource, "Follow the source command");
 
   CLI11_PARSE(app, argc, argv);
 
@@ -326,8 +370,25 @@ int main(int argc, char **argv, char **envp) {
   }
 
   configDir = std::filesystem::path(configFilePath).parent_path().string();
+
   if (!schemaFilePath.empty()) {
-    schemaFilePath = resolvePath(schemaFilePath).front().string();
+    // Fix: Use absolute path for schema path if it's relative to current
+    // directory
+    if (schemaFilePath.starts_with("../") || schemaFilePath.starts_with("./")) {
+      schemaFilePath = std::filesystem::absolute(schemaFilePath).string();
+    } else {
+      auto resolvedSchemaPath = resolvePath(schemaFilePath);
+      if (!resolvedSchemaPath.empty()) {
+        schemaFilePath = resolvedSchemaPath.front().string();
+      }
+    }
+
+    // Verify schema file exists
+    if (!std::filesystem::exists(schemaFilePath)) {
+      std::cerr << "Error: Schema file does not exist: " << schemaFilePath
+                << std::endl;
+      return 1;
+    }
   }
 
   // Parse variables from the config file before initializing Hyprlang
