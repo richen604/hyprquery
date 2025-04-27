@@ -1,9 +1,32 @@
-cmake_minimum_required(VERSION 3.15)
-project(hyprquery VERSION 0.1.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.10)
+project(hyprquery VERSION 0.1.0)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Override CMake policy to handle dependencies with older minimum CMake version requirements
+if(POLICY CMP0025)
+  cmake_policy(SET CMP0025 NEW)
+endif()
 
+# Tell CMake to try configuring anyway, even for dependencies requiring older CMake
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+# Set the C++ standard
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# Set policy for CMP0048
+if(POLICY CMP0048)
+  cmake_policy(SET CMP0048 NEW)
+endif()
+
+# Set policy for CMP0127
+if(POLICY CMP0127)
+  cmake_policy(SET CMP0127 NEW)
+endif()
+
+# Suppress developer warnings
+set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1)
+
+# Add FetchContent module
 include(FetchContent)
 include(ExternalProject)
 include(GNUInstallDirs)
