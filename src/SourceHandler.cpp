@@ -1,4 +1,5 @@
 #include "SourceHandler.hpp"
+#include "ConfigUtils.hpp"
 #include <cstring>
 #include <fstream>
 #include <glob.h>
@@ -45,32 +46,35 @@ std::string SourceHandler::expandEnvVars(const std::string &path) {
 }
 
 std::vector<std::filesystem::path>
-SourceHandler::resolvePath(const std::string &path) {
-  std::string expandedPath = expandEnvVars(path);
+SourceHandler::resolvePath(const std::string &filePath) {
   std::vector<std::filesystem::path> paths;
 
-  spdlog::debug("Expanded path: {}", expandedPath);
+  // Apply path normalization first to handle spaces and environment variables
+  std::string normalizedPath = ConfigUtils::normalizePath(filePath);
 
-  // Handle case where the path doesn't exist
-  if (expandedPath.empty()) {
-    spdlog::error("Path is empty after expansion: {}", path);
+  spdlog::debug("Normalized path: {}", normalizedPath);
+
+  // Handle case where the path might be empty after normalization
+  if (normalizedPath.empty()) {
+    spdlog::error("Path is empty after normalization: {}", filePath);
     return paths;
   }
 
   glob_t glob_result;
   memset(&glob_result, 0, sizeof(glob_t));
 
-  int ret = glob(expandedPath.c_str(), GLOB_TILDE | GLOB_BRACE, nullptr,
+  // Use normalized path for glob operation
+  int ret = glob(normalizedPath.c_str(), GLOB_TILDE | GLOB_BRACE, nullptr,
                  &glob_result);
 
   if (ret != 0) {
     if (ret == GLOB_NOMATCH) {
-      spdlog::warn("No matches found for path: {}", expandedPath);
+      spdlog::warn("No matches found for path: {}", normalizedPath);
     } else {
-      spdlog::error("Glob error for pattern: {}", expandedPath);
+      spdlog::error("Glob error for pattern: {}", normalizedPath);
     }
     // Even if glob fails, try to use the path directly as a fallback
-    std::filesystem::path fallbackPath(expandedPath);
+    std::filesystem::path fallbackPath(normalizedPath);
     if (std::filesystem::exists(fallbackPath.parent_path())) {
       paths.push_back(fallbackPath);
     }

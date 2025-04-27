@@ -66,6 +66,7 @@ int main(int argc, char **argv, char **envp) {
   CLI11_PARSE(app, argc, argv);
 
   // Resolve config file path
+  configFilePath = hyprquery::ConfigUtils::normalizePath(configFilePath);
   auto resolvedPaths = hyprquery::SourceHandler::resolvePath(configFilePath);
   if (resolvedPaths.empty()) {
     std::cerr << "Error: Could not resolve configuration file path: "
@@ -88,16 +89,11 @@ int main(int argc, char **argv, char **envp) {
 
   // Handle schema path resolution
   if (!schemaFilePath.empty()) {
-    // Fix: Use absolute path for schema path if it's relative to current
-    // directory
-    if (schemaFilePath.starts_with("../") || schemaFilePath.starts_with("./")) {
-      schemaFilePath = std::filesystem::absolute(schemaFilePath).string();
-    } else {
-      auto resolvedSchemaPath =
-          hyprquery::SourceHandler::resolvePath(schemaFilePath);
-      if (!resolvedSchemaPath.empty()) {
-        schemaFilePath = resolvedSchemaPath.front().string();
-      }
+    schemaFilePath = hyprquery::ConfigUtils::normalizePath(schemaFilePath);
+    auto resolvedSchemaPath =
+        hyprquery::SourceHandler::resolvePath(schemaFilePath);
+    if (!resolvedSchemaPath.empty()) {
+      schemaFilePath = resolvedSchemaPath.front().string();
     }
 
     // Verify schema file exists

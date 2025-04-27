@@ -29,6 +29,9 @@ public:
   // Clean command for workspace
   static std::optional<std::string>
   cleanCmdForWorkspace(const std::string &name, const std::string &cmd);
+
+  // Normalize file paths (handle spaces and special characters)
+  static std::string normalizePath(const std::string &path);
 };
 
 } // namespace hyprquery

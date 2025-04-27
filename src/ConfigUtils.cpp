@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <regex>
 #include <spdlog/spdlog.h>
+#include <wordexp.h>
 
 namespace hyprquery {
 
@@ -148,6 +149,63 @@ ConfigUtils::cleanCmdForWorkspace(const std::string &name,
   result = std::regex_replace(result, namePattern, name);
 
   return result;
+}
+
+std::string ConfigUtils::normalizePath(const std::string &path) {
+  // First, handle quotes if present (in case of command-line arguments with
+  // spaces)
+  std::string processedPath = path;
+  if ((processedPath.front() == '"' && processedPath.back() == '"') ||
+      (processedPath.front() == '\'' && processedPath.back() == '\'')) {
+    processedPath = processedPath.substr(1, processedPath.length() - 2);
+  }
+
+  // Handle environment variables like $HOME
+  std::string expandedPath = processedPath;
+
+  if (expandedPath.find('$') != std::string::npos) {
+    wordexp_t p;
+    // Use WRDE_NOCMD to prevent command execution and WRDE_UNDEF to report
+    // undefined variables
+    if (wordexp(expandedPath.c_str(), &p, WRDE_NOCMD) == 0) {
+      if (p.we_wordc > 0 && p.we_wordv[0] != nullptr) {
+        expandedPath = p.we_wordv[0];
+      }
+      wordfree(&p);
+    }
+  }
+
+  // Handle tilde expansion separately
+  if (expandedPath.starts_with("~") &&
+      (expandedPath.size() == 1 || expandedPath[1] == '/')) {
+    const char *home = getenv("HOME");
+    if (home) {
+      expandedPath.replace(0, 1, home);
+    }
+  }
+
+  // Create a filesystem path with proper escaping
+  std::filesystem::path fsPath(expandedPath);
+
+  // Handle relative paths by making them absolute based on current working
+  // directory
+  if (fsPath.is_relative()) {
+    fsPath = std::filesystem::absolute(fsPath);
+  }
+
+  // If the path exists, return its canonical form
+  if (std::filesystem::exists(fsPath)) {
+    return std::filesystem::canonical(fsPath).string();
+  }
+
+  // If the parent path exists, use weakly_canonical to normalize as much as
+  // possible
+  if (std::filesystem::exists(fsPath.parent_path())) {
+    return std::filesystem::weakly_canonical(fsPath).string();
+  }
+
+  // Fall back to just normalizing the path lexically
+  return fsPath.lexically_normal().string();
 }
 
 } // namespace hyprquery
