@@ -161,16 +161,16 @@ Hyprlang::CParseResult SourceHandler::handleSource(const char *command,
   // Save the current config directory
   std::string configDirBackup = s_configDir;
 
-  // Path Expansion with glob
+  // Path expansion with glob
   std::unique_ptr<glob_t, void (*)(glob_t *)> glob_buf{
       static_cast<glob_t *>(calloc(1, sizeof(glob_t))), [](glob_t *g) {
         if (g) {
-          globfree(g);
-          free(g);
+          globfree(g); // free internal resources allocated by glob()
+          free(g);     // free the memory for the glob_t structure
         }
       }};
 
-  // Get absolute path
+  // Get absolute path based on current config directory
   std::string absolutePath = path;
   if (path[0] == '~') {
     const char *home = getenv("HOME");
@@ -184,7 +184,6 @@ Hyprlang::CParseResult SourceHandler::handleSource(const char *command,
   spdlog::debug("Source: resolving path pattern: {}", absolutePath);
 
   if (glob(absolutePath.c_str(), GLOB_TILDE, nullptr, glob_buf.get()) != 0) {
-    globfree(glob_buf.get());
     result.setError(
         ("source= found no matching files for pattern: " + path).c_str());
     return result;

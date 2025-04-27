@@ -1,8 +1,29 @@
 #pragma once
 
 #include <any>
-#include <hyprlang.hpp>
 #include <string>
+
+// Try to include system hyprlang first, fall back to local install
+#ifdef USE_SYSTEM_HYPRLANG
+#include <hyprlang.hpp>
+#else
+// Try standard include path first
+#if __has_include(<hyprlang.hpp>)
+#include <hyprlang.hpp>
+// Then try relative paths for local builds
+#elif __has_include("../build/hyprlang_install/include/hyprlang.hpp")
+#include "../build/hyprlang_install/include/hyprlang.hpp"
+#elif __has_include("../hyprlang/include/hyprlang.hpp")
+#include "../hyprlang/include/hyprlang.hpp"
+#else
+#error "Could not find hyprlang.hpp - please install it or specify its location"
+#endif
+#endif
+
+// Define a default ABI version if not provided
+#ifndef HYPRLANG_ABI_VERSION
+#define HYPRLANG_ABI_VERSION 1
+#endif
 
 namespace hyprquery {
 
