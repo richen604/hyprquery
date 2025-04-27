@@ -1,4 +1,4 @@
-#include "../build/_deps/nlohmann_json-src/single_include/nlohmann/json.hpp"
+#include "../build/_deps/json-src/single_include/nlohmann/json.hpp"
 #include <CLI/CLI.hpp>
 #include <any>
 #include <cstring>

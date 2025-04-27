@@ -13,6 +13,10 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# Set binary output directory
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_SOURCE_DIR}/bin)
+
 # Set policy for CMP0048
 if(POLICY CMP0048)
   cmake_policy(SET CMP0048 NEW)
@@ -120,6 +124,9 @@ endif()
 
 # =================== Main Executable ===================
 add_executable(hyq src/main.cpp)
+
+# Set binary output directory and name
+set_target_properties(hyq PROPERTIES RUNTIME_OUTPUT_NAME "hyq")
 
 # Include hyprlang header
 target_include_directories(hyq PRIVATE ${HYPRLANG_INCLUDE_DIR})
