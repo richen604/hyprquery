@@ -5,6 +5,7 @@
 #include <glob.h>
 #include <memory>
 #include <wordexp.h>
+#include <spdlog/spdlog.h>
 
 namespace hyprquery {
 

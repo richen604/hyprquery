@@ -1,5 +1,7 @@
 #include "ConfigUtils.hpp"
 #include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <regex>
 #include <spdlog/spdlog.h>
 #include <wordexp.h>
@@ -34,8 +36,8 @@ void ConfigUtils::addConfigValuesFromSchema(Hyprlang::CConfig &config,
       continue;
     }
 
-    std::string value = option["value"];
-    std::string type = option["type"];
+    std::string value = option["value"].get<std::string>();
+    std::string type = option["type"].get<std::string>();
 
     if (type == "INT" && option["data"].contains("default")) {
       config.addConfigValue(

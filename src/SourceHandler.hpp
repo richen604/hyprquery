@@ -4,7 +4,6 @@
 #include <hyprlang.hpp>
 #include <spdlog/spdlog.h>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace hyprquery {

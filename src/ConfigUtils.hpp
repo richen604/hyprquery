@@ -1,9 +1,7 @@
 #pragma once
 
 #include <any>
-#include <fstream>
-#include <hyprlang.hpp>
-#include <nlohmann/json.hpp>
+#include <hyprlang.hpp> // Direct include from the built library
 #include <optional>
 #include <string>
 

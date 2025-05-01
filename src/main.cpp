@@ -1,12 +1,11 @@
 #include <CLI/CLI.hpp>
 #include <filesystem>
-#include <fstream>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include "ConfigUtils.hpp"
-#include "HyprlangCompat.hpp"
 #include "SourceHandler.hpp"
+#include <hyprlang.hpp>  // Direct include from the built library
 
 static Hyprlang::CConfig *pConfig = nullptr;
 
@@ -110,7 +109,12 @@ int main(int argc, char **argv, char **envp) {
 
   // Initialize Hyprlang config
   Hyprlang::SConfigOptions options;
-  options = {.verifyOnly = getDefaultKeys ? 1 : 0, .allowMissingConfig = 1};
+  
+    options = {
+      .verifyOnly = static_cast<bool>(getDefaultKeys ? 1 : 0), 
+      .allowMissingConfig = static_cast<bool>(1)
+  };
+
   Hyprlang::CConfig config(configFilePath.c_str(), options);
   pConfig = &config;
 
@@ -168,18 +172,18 @@ int main(int argc, char **argv, char **envp) {
                       result.value);
       } else {
         // Fallback to Hyprlang's config value lookup
-        std::any value =
-            hyprquery::HyprlangCompat::getConfigValue(pConfig, query.c_str());
-        result.value = hyprquery::HyprlangCompat::convertValueToString(value);
-        result.type = hyprquery::HyprlangCompat::getValueTypeName(value);
+        std::any value = pConfig->getConfigValue(query.c_str());
+    result.value = hyprquery::ConfigUtils::convertValueToString(value);
+    result.type = hyprquery::ConfigUtils::getValueTypeName(value);
       }
     }
   } else {
+    // Fallback to Hyprlang's config value lookup
     // Regular config value lookup (non-variable)
-    std::any value =
-        hyprquery::HyprlangCompat::getConfigValue(pConfig, query.c_str());
-    result.value = hyprquery::HyprlangCompat::convertValueToString(value);
-    result.type = hyprquery::HyprlangCompat::getValueTypeName(value);
+    std::any value = pConfig->getConfigValue(query.c_str());
+    result.value = hyprquery::ConfigUtils::convertValueToString(value);
+    result.type = hyprquery::ConfigUtils::getValueTypeName(value);
+ 
   }
 
   // Output the result
