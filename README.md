@@ -9,16 +9,17 @@ A command-line utility for querying configuration values from Hyprland and hyprl
 - Load schema files to provide default values
 - JSON output format for integration with other tools
 - Environment variable expansion in file paths
-- Cross-platform compatibility across Linux distributions
 
 ## Installation
 
 ### Dependencies
 
-- C++20 compatible compiler
-- CMake 3.15+
-- pkg-config (optional, for system hyprlang detection)
-- hyprlang (automatically downloaded if not found on system)
+- C++23 compatible compiler
+- CMake 3.19+
+- spdlog
+- nlohmann_json
+- CLI11
+- hyprlang (automatically downloaded and built during compilation)
 
 ### Building from Source
 
@@ -42,19 +43,38 @@ sudo make install
 
 ### Build Options
 
-- `USE_SYSTEM_HYPRLANG` (ON/OFF): Whether to use system-installed hyprlang or build from source. Default: ON
-- `HYPRLANG_VERSION` (string): Specific version of hyprlang to use when building from source. Default: "v0.6.0"
-- `STRICT_MODE` (ON/OFF): Enable strict mode checks. Default: OFF
+- `CMAKE_EXPORT_COMPILE_COMMANDS=ON`: Generate compile_commands.json for IDE integration
+- `CMAKE_BUILD_TYPE=Release|Debug`: Build in release or debug mode
 
 Example:
 
 ```bash
-# Use a specific version of hyprlang
-cmake -DHYPRLANG_VERSION=v0.7.0 ..
+# Build with compile commands for IDE integration
+cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
 
-# Force building hyprlang from source even if system version exists
-cmake -DUSE_SYSTEM_HYPRLANG=OFF ..
+# Build in release mode
+cmake -DCMAKE_BUILD_TYPE=Release ..
 ```
+
+### IDE Setup
+
+For IDE integration with clangd, run the setup script to generate the compile_commands.json file:
+
+```bash
+# Make the script executable (if needed)
+chmod +x scripts/setup-clangd.sh
+
+# Run the script
+./scripts/setup-clangd.sh
+```
+
+This will:
+
+1. Generate the compile_commands.json in the build directory
+2. Create a copy of the compile_commands.json in the project root
+3. Allow clangd to find all headers and provide proper code intelligence
+
+After running the script, restart your IDE or reload the clangd language server.
 
 ### Distribution Packages
 
@@ -146,16 +166,6 @@ Schema files define the format and default values for configuration options. The
   ]
 }
 ```
-
-## ABI Compatibility
-
-HyprQuery is designed to work with different versions of hyprlang by:
-
-1. Preferring system-installed hyprlang when available
-2. Falling back to building a specific version from source
-3. Using a compatibility layer to handle API/ABI differences
-
-When building, you can specify which version of hyprlang to use with the `HYPRLANG_VERSION` CMake option.
 
 ## License
 
