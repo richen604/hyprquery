@@ -57,6 +57,12 @@ jobs:
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
+      - name: Patch hyprlang to remove <print> include and std::print usage
+        run: |
+          find build/_deps/hyprlang-src/ -type f -name '*.hpp' -exec sed -i 's|#include <print>|// #include <print>|' {} +
+          find build/_deps/hyprlang-src/ -type f -name '*.hpp' -exec sed -i 's|std::print|// std::print|' {} +
+          find build/_deps/hyprlang-src/ -type f -name '*.cpp' -exec sed -i 's|std::print|// std::print|' {} +
+
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }} -- -j$(nproc)
 
