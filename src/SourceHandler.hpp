@@ -29,20 +29,12 @@ public:
   resolvePath(const std::string &path);
   static std::string expandEnvVars(const std::string &path);
 
-  // Variable handling
-  static std::map<std::string, std::string>
-  parseVariablesFromFile(const std::string &filePath);
-
-  // Get a variable by name
-  static std::optional<std::string> getVariable(const std::string &name);
-
   // Check if the source handler has been initialized
   static bool isInitialized();
 
 private:
   static Hyprlang::CConfig *s_pConfig;
   static std::string s_configDir;
-  static std::map<std::string, std::string> s_allVariables;
   static bool s_initialized;
 };
 

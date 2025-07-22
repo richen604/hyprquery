@@ -29,7 +29,7 @@ include(FetchContent)
 FetchContent_Declare(
     hyprlang
     GIT_REPOSITORY https://github.com/hyprwm/hyprlang
-    GIT_TAG v0.2.1  # Adjust version as needed
+    GIT_TAG v0.6.3  # Adjust version as needed
 )
 FetchContent_MakeAvailable(hyprlang)
 

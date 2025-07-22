@@ -1,7 +1,7 @@
 #include "SourceHandler.hpp"
 #include "ConfigUtils.hpp"
 #include <cstring>
-#include <fstream>
+// #include <fstream>
 #include <glob.h>
 #include <memory>
 #include <wordexp.h>
@@ -12,7 +12,6 @@ namespace hyprquery {
 // Initialize static members
 Hyprlang::CConfig *SourceHandler::s_pConfig = nullptr;
 std::string SourceHandler::s_configDir = "";
-std::map<std::string, std::string> SourceHandler::s_allVariables;
 bool SourceHandler::s_initialized = false;
 
 void SourceHandler::setConfigDir(const std::string &dir) { s_configDir = dir; }
@@ -22,28 +21,13 @@ std::string SourceHandler::getConfigDir() { return s_configDir; }
 bool SourceHandler::isInitialized() { return s_initialized; }
 
 std::string SourceHandler::expandEnvVars(const std::string &path) {
-  wordexp_t p;
-  std::string result = path;
-
-  // Handle wordexp() special cases
-  // Replace $ with $$ for any $ that precedes { to avoid command substitution
-  size_t pos = 0;
-  while ((pos = result.find("${", pos)) != std::string::npos) {
-    result.insert(pos + 1, "$");
-    pos += 3; // Skip past the inserted $
+  // Hyprland does not do any $/wordexp hack, just expand ~ to $HOME
+  if (!path.empty() && path[0] == '~') {
+    const char* home = getenv("HOME");
+    if (home)
+      return std::string(home) + path.substr(1);
   }
-
-  // Use wordexp to handle environment variable expansion and tilde expansion
-  if (wordexp(result.c_str(), &p, WRDE_NOCMD) == 0) {
-    if (p.we_wordc > 0 && p.we_wordv[0] != nullptr) {
-      result = p.we_wordv[0];
-    }
-    wordfree(&p);
-  } else {
-    spdlog::warn("Failed to expand environment variables in path: {}", path);
-  }
-
-  return result;
+  return path;
 }
 
 std::vector<std::filesystem::path>
@@ -108,51 +92,6 @@ SourceHandler::resolvePath(const std::string &filePath) {
   return paths;
 }
 
-std::map<std::string, std::string>
-SourceHandler::parseVariablesFromFile(const std::string &filePath) {
-  std::map<std::string, std::string> variables;
-  std::ifstream configFile(filePath);
-
-  if (!configFile.is_open()) {
-    spdlog::error("Failed to open config file for variable parsing: {}",
-                  filePath);
-    return variables;
-  }
-
-  std::string line;
-  while (std::getline(configFile, line)) {
-    // Trim whitespace
-    line.erase(0, line.find_first_not_of(" \t"));
-
-    // Look for variable definitions ($VAR=value)
-    if (line.size() > 0 && line[0] == '$') {
-      size_t equalPos = line.find('=');
-      if (equalPos != std::string::npos) {
-        std::string varName = line.substr(0, equalPos);
-        std::string varValue = line.substr(equalPos + 1);
-
-        // Trim whitespace from value
-        varValue.erase(0, varValue.find_first_not_of(" \t"));
-        varValue.erase(varValue.find_last_not_of(" \t") + 1);
-
-        // Store in maps
-        variables[varName] = varValue;
-        s_allVariables[varName] = varValue; // Store in the global map too
-        spdlog::debug("Found variable: {} = {}", varName, varValue);
-      }
-    }
-  }
-
-  return variables;
-}
-
-std::optional<std::string> SourceHandler::getVariable(const std::string &name) {
-  auto it = s_allVariables.find(name);
-  if (it != s_allVariables.end())
-    return it->second;
-  return std::nullopt;
-}
-
 Hyprlang::CParseResult SourceHandler::handleSource(const char *command,
                                                    const char *rawpath) {
   Hyprlang::CParseResult result;
@@ -163,79 +102,63 @@ Hyprlang::CParseResult SourceHandler::handleSource(const char *command,
     return result;
   }
 
-  // Save the current config directory
-  std::string configDirBackup = s_configDir;
-
   // Path expansion with glob
   std::unique_ptr<glob_t, void (*)(glob_t *)> glob_buf{
       static_cast<glob_t *>(calloc(1, sizeof(glob_t))), [](glob_t *g) {
         if (g) {
-          globfree(g); // free internal resources allocated by glob()
-          free(g);     // free the memory for the glob_t structure
+          globfree(g);
+          free(g);
         }
       }};
 
-  // Get absolute path based on current config directory
-  std::string absolutePath = path;
+  // Use absolute path based on current config directory
+  std::string absPath;
   if (path[0] == '~') {
     const char *home = getenv("HOME");
-    if (home)
-      absolutePath = std::string(home) + path.substr(1);
+    absPath = home ? std::string(home) + path.substr(1) : path;
   } else if (path[0] != '/') {
-    // Handle relative paths
-    absolutePath = s_configDir + "/" + path;
+    absPath = s_configDir + "/" + path;
+  } else {
+    absPath = path;
   }
 
-  spdlog::debug("Source: resolving path pattern: {}", absolutePath);
-
-  if (glob(absolutePath.c_str(), GLOB_TILDE, nullptr, glob_buf.get()) != 0) {
-    result.setError(
-        ("source= found no matching files for pattern: " + path).c_str());
+  int r = glob(absPath.c_str(), GLOB_TILDE, nullptr, glob_buf.get());
+  if (r != 0) {
+    std::string err = std::string("source= globbing error: ") + (r == GLOB_NOMATCH ? "found no match" : r == GLOB_ABORTED ? "read error" : "out of memory");
+    spdlog::error("{}", err);
+    result.setError(err.c_str());
     return result;
   }
 
   std::string errorsFromParsing;
 
-  // Process each matching file
   for (size_t i = 0; i < glob_buf->gl_pathc; i++) {
-    std::string filepath = glob_buf->gl_pathv[i];
-
-    if (!std::filesystem::is_regular_file(filepath)) {
-      if (std::filesystem::exists(filepath)) {
-        spdlog::debug("Source: skipping non-file {}", filepath);
+    std::string value = glob_buf->gl_pathv[i];
+    if (!std::filesystem::is_regular_file(value)) {
+      if (std::filesystem::exists(value)) {
+        spdlog::warn("source= skipping non-file {}", value);
         continue;
       }
-
-      spdlog::error("Source: file doesn't exist: {}", filepath);
-      if (errorsFromParsing.empty()) {
-        errorsFromParsing = "source= file doesn't exist: " + filepath;
-      }
-      continue;
+      std::string err = "source= file " + value + " doesn't exist!";
+      spdlog::error("{}", err);
+      result.setError(err.c_str());
+      return result;
     }
 
-    spdlog::debug("Parsing source file: {}", filepath);
+    // Backup and set config dir
+    std::string configDirBackup = s_configDir;
+    s_configDir = std::filesystem::path(value).parent_path().string();
 
-    // Set the config directory to the parent of the file we're parsing
-    s_configDir = std::filesystem::path(filepath).parent_path().string();
+    auto parseResult = s_pConfig->parseFile(value.c_str());
 
-    // Parse variables from the sourced file
-    auto sourcedVariables = parseVariablesFromFile(filepath);
+    s_configDir = configDirBackup;
 
-    // Parse the file
-    auto parseResult = s_pConfig->parseFile(filepath.c_str());
-
-    if (parseResult.error && errorsFromParsing.empty()) {
-      errorsFromParsing = parseResult.getError();
-    }
+    if (parseResult.error && errorsFromParsing.empty())
+      errorsFromParsing += parseResult.getError();
   }
 
-  // Restore the original directory context
-  s_configDir = configDirBackup;
-
-  if (!errorsFromParsing.empty()) {
+  if (!errorsFromParsing.empty())
     result.setError(errorsFromParsing.c_str());
-  }
-
   return result;
 }
 
