@@ -123,12 +123,10 @@ std::pair<int64_t, std::string>
 ConfigUtils::getWorkspaceIDNameFromString(const std::string &str) {
   static const int64_t WORKSPACE_INVALID = -99;
 
-  // If it's a named workspace
   if (str.starts_with("name:")) {
     return {WORKSPACE_INVALID, str.substr(5)};
   }
 
-  // If it's a numbered workspace
   try {
     return {std::stoll(str), ""};
   } catch (...) {
@@ -142,9 +140,6 @@ ConfigUtils::cleanCmdForWorkspace(const std::string &name,
   if (cmd.empty())
     return std::nullopt;
 
-  // Perform any needed cleaning or sanitization of workspace commands
-  // For example, replace any special variables like $NAME with the workspace
-  // name
   std::string result = cmd;
 
   std::regex namePattern("\\$NAME");
@@ -154,21 +149,18 @@ ConfigUtils::cleanCmdForWorkspace(const std::string &name,
 }
 
 std::string ConfigUtils::normalizePath(const std::string &path) {
-  // First, handle quotes if present (in case of command-line arguments with
-  // spaces)
+
   std::string processedPath = path;
   if ((processedPath.front() == '"' && processedPath.back() == '"') ||
       (processedPath.front() == '\'' && processedPath.back() == '\'')) {
     processedPath = processedPath.substr(1, processedPath.length() - 2);
   }
 
-  // Handle environment variables like $HOME
   std::string expandedPath = processedPath;
 
   if (expandedPath.find('$') != std::string::npos) {
     wordexp_t p;
-    // Use WRDE_NOCMD to prevent command execution and WRDE_UNDEF to report
-    // undefined variables
+
     if (wordexp(expandedPath.c_str(), &p, WRDE_NOCMD) == 0) {
       if (p.we_wordc > 0 && p.we_wordv[0] != nullptr) {
         expandedPath = p.we_wordv[0];
@@ -177,7 +169,6 @@ std::string ConfigUtils::normalizePath(const std::string &path) {
     }
   }
 
-  // Handle tilde expansion separately
   if (expandedPath.starts_with("~") &&
       (expandedPath.size() == 1 || expandedPath[1] == '/')) {
     const char *home = getenv("HOME");
@@ -186,27 +177,20 @@ std::string ConfigUtils::normalizePath(const std::string &path) {
     }
   }
 
-  // Create a filesystem path with proper escaping
   std::filesystem::path fsPath(expandedPath);
 
-  // Handle relative paths by making them absolute based on current working
-  // directory
   if (fsPath.is_relative()) {
     fsPath = std::filesystem::absolute(fsPath);
   }
 
-  // If the path exists, return its canonical form
   if (std::filesystem::exists(fsPath)) {
     return std::filesystem::canonical(fsPath).string();
   }
 
-  // If the parent path exists, use weakly_canonical to normalize as much as
-  // possible
   if (std::filesystem::exists(fsPath.parent_path())) {
     return std::filesystem::weakly_canonical(fsPath).string();
   }
 
-  // Fall back to just normalizing the path lexically
   return fsPath.lexically_normal().string();
 }
 

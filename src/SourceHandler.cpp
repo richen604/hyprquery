@@ -1,15 +1,14 @@
 #include "SourceHandler.hpp"
 #include "ConfigUtils.hpp"
 #include <cstring>
-// #include <fstream>
+
 #include <glob.h>
 #include <memory>
-#include <wordexp.h>
 #include <spdlog/spdlog.h>
+#include <wordexp.h>
 
 namespace hyprquery {
 
-// Initialize static members
 Hyprlang::CConfig *SourceHandler::s_pConfig = nullptr;
 std::string SourceHandler::s_configDir = "";
 bool SourceHandler::s_initialized = false;
@@ -21,9 +20,9 @@ std::string SourceHandler::getConfigDir() { return s_configDir; }
 bool SourceHandler::isInitialized() { return s_initialized; }
 
 std::string SourceHandler::expandEnvVars(const std::string &path) {
-  // Hyprland does not do any $/wordexp hack, just expand ~ to $HOME
+
   if (!path.empty() && path[0] == '~') {
-    const char* home = getenv("HOME");
+    const char *home = getenv("HOME");
     if (home)
       return std::string(home) + path.substr(1);
   }
@@ -34,12 +33,10 @@ std::vector<std::filesystem::path>
 SourceHandler::resolvePath(const std::string &filePath) {
   std::vector<std::filesystem::path> paths;
 
-  // Apply path normalization first to handle spaces and environment variables
   std::string normalizedPath = ConfigUtils::normalizePath(filePath);
 
   spdlog::debug("Normalized path: {}", normalizedPath);
 
-  // Handle case where the path might be empty after normalization
   if (normalizedPath.empty()) {
     spdlog::error("Path is empty after normalization: {}", filePath);
     return paths;
@@ -48,7 +45,6 @@ SourceHandler::resolvePath(const std::string &filePath) {
   glob_t glob_result;
   memset(&glob_result, 0, sizeof(glob_t));
 
-  // Use normalized path for glob operation
   int ret = glob(normalizedPath.c_str(), GLOB_TILDE | GLOB_BRACE, nullptr,
                  &glob_result);
 
@@ -58,7 +54,7 @@ SourceHandler::resolvePath(const std::string &filePath) {
     } else {
       spdlog::error("Glob error for pattern: {}", normalizedPath);
     }
-    // Even if glob fails, try to use the path directly as a fallback
+
     std::filesystem::path fallbackPath(normalizedPath);
     if (std::filesystem::exists(fallbackPath.parent_path())) {
       paths.push_back(fallbackPath);
@@ -102,7 +98,6 @@ Hyprlang::CParseResult SourceHandler::handleSource(const char *command,
     return result;
   }
 
-  // Path expansion with glob
   std::unique_ptr<glob_t, void (*)(glob_t *)> glob_buf{
       static_cast<glob_t *>(calloc(1, sizeof(glob_t))), [](glob_t *g) {
         if (g) {
@@ -111,7 +106,6 @@ Hyprlang::CParseResult SourceHandler::handleSource(const char *command,
         }
       }};
 
-  // Use absolute path based on current config directory
   std::string absPath;
   if (path[0] == '~') {
     const char *home = getenv("HOME");
@@ -124,7 +118,10 @@ Hyprlang::CParseResult SourceHandler::handleSource(const char *command,
 
   int r = glob(absPath.c_str(), GLOB_TILDE, nullptr, glob_buf.get());
   if (r != 0) {
-    std::string err = std::string("source= globbing error: ") + (r == GLOB_NOMATCH ? "found no match" : r == GLOB_ABORTED ? "read error" : "out of memory");
+    std::string err = std::string("source= globbing error: ") +
+                      (r == GLOB_NOMATCH   ? "found no match"
+                       : r == GLOB_ABORTED ? "read error"
+                                           : "out of memory");
     spdlog::error("{}", err);
     result.setError(err.c_str());
     return result;
@@ -145,7 +142,6 @@ Hyprlang::CParseResult SourceHandler::handleSource(const char *command,
       return result;
     }
 
-    // Backup and set config dir
     std::string configDirBackup = s_configDir;
     s_configDir = std::filesystem::path(value).parent_path().string();
 
