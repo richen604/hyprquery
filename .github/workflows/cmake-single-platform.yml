@@ -43,6 +43,14 @@ jobs:
       - name: Install spdlog
         run: sudo apt-get install -y libspdlog-dev
 
+      - name: Build and install hyprutils
+        run: |
+          git clone --depth=1 https://github.com/hyprwm/hyprutils.git
+          cd hyprutils
+          cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -S . -B build
+          cmake --build build --config Release --target all -j$(nproc)
+          sudo cmake --install build
+
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
