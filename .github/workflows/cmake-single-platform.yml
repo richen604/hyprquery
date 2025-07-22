@@ -43,6 +43,9 @@ jobs:
       - name: Install spdlog
         run: sudo apt-get install -y libspdlog-dev
 
+      - name: Install pixman
+        run: sudo apt-get install -y libpixman-1-dev
+
       - name: Build and install hyprutils
         run: |
           git clone --depth=1 https://github.com/hyprwm/hyprutils.git
