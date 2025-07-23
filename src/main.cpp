@@ -8,9 +8,6 @@
 #include <regex>
 #include <spdlog/spdlog.h>
 
-// TODO: Handle config injection correctly
-// For now this is a hack by using a temp file
-
 static Hyprlang::CConfig *pConfig = nullptr;
 
 struct QueryResult {
@@ -51,8 +48,12 @@ int main(int argc, char **argv, char **envp) {
   app.add_flag("--debug", debugLogging, "Enable debug logging");
   app.add_option("--delimiter,-D", delimiter,
                  "Delimiter for plain output (default: newline)");
-  app.add_option("--type,-T", expectedTypes, "Expected type for each query (optional, matches order of -Q)");
-  app.add_option("--expect-regex,-R", expectedRegexes, "Expected regex for each query (optional, matches order of -Q)");
+  app.add_option(
+      "--type,-T", expectedTypes,
+      "Expected type for each query (optional, matches order of -Q)");
+  app.add_option(
+      "--expect-regex,-R", expectedRegexes,
+      "Expected regex for each query (optional, matches order of -Q)");
 
   bool variableSearch = false;
 
@@ -109,21 +110,14 @@ int main(int argc, char **argv, char **envp) {
   options = {.verifyOnly = static_cast<bool>(getDefaultKeys ? 1 : 0),
              .allowMissingConfig = static_cast<bool>(1)};
 
-  std::string tempFilePath;
   std::hash<std::string> hasher;
+
+  std::string configStream;
   if (variableSearch) {
     if (debugLogging)
       spdlog::debug("[variable-search] Enabled");
-    std::filesystem::path inputPath(configFilePath);
-    std::string tempFileName =
-        "hyprquery_temp_" + std::to_string(getpid()) + ".conf";
-    tempFilePath = (inputPath.parent_path() / tempFileName).string();
-    if (debugLogging)
-      spdlog::debug(
-          std::string("[variable-search] Creating temp config file: ") +
-          tempFilePath);
     std::ifstream src(configFilePath);
-    std::ofstream dst(tempFilePath);
+    std::ostringstream dst;
     dst << src.rdbuf();
     for (size_t i = 0; i < queries.size(); ++i) {
       if (!queries[i].empty() && queries[i][0] == '$') {
@@ -136,9 +130,10 @@ int main(int argc, char **argv, char **envp) {
                         dynLine.substr(1, dynLine.size() - 2));
       }
     }
-    dst.close();
     src.close();
-    configFilePath = tempFilePath;
+    configStream = dst.str();
+    configFilePath = configStream;
+    options.pathIsStream = true;
   }
 
   Hyprlang::CConfig config(configFilePath.c_str(), options);
@@ -205,23 +200,24 @@ int main(int argc, char **argv, char **envp) {
       result.value = hyprquery::ConfigUtils::convertValueToString(value);
       result.type = hyprquery::ConfigUtils::getValueTypeName(value);
 
-      // Type check
-      if (!expectedTypes.empty() && i < expectedTypes.size() && !expectedTypes[i].empty()) {
+      if (!expectedTypes.empty() && i < expectedTypes.size() &&
+          !expectedTypes[i].empty()) {
         if (result.type != expectedTypes[i]) {
           result.value = "";
           result.type = "NULL";
         }
       }
-      // Regex check
-      if (!expectedRegexes.empty() && i < expectedRegexes.size() && !expectedRegexes[i].empty()) {
+
+      if (!expectedRegexes.empty() && i < expectedRegexes.size() &&
+          !expectedRegexes[i].empty()) {
         try {
           std::regex rx(expectedRegexes[i]);
           if (!std::regex_match(result.value, rx)) {
             result.value = "";
             result.type = "NULL";
           }
-        } catch (const std::regex_error&) {
-          // Invalid regex, treat as failed match
+        } catch (const std::regex_error &) {
+
           result.value = "";
           result.type = "NULL";
         }
@@ -267,23 +263,24 @@ int main(int argc, char **argv, char **envp) {
       result.value = hyprquery::ConfigUtils::convertValueToString(value);
       result.type = hyprquery::ConfigUtils::getValueTypeName(value);
 
-      // Type check
-      if (!expectedTypes.empty() && i < expectedTypes.size() && !expectedTypes[i].empty()) {
+      if (!expectedTypes.empty() && i < expectedTypes.size() &&
+          !expectedTypes[i].empty()) {
         if (result.type != expectedTypes[i]) {
           result.value = "";
           result.type = "NULL";
         }
       }
-      // Regex check
-      if (!expectedRegexes.empty() && i < expectedRegexes.size() && !expectedRegexes[i].empty()) {
+
+      if (!expectedRegexes.empty() && i < expectedRegexes.size() &&
+          !expectedRegexes[i].empty()) {
         try {
           std::regex rx(expectedRegexes[i]);
           if (!std::regex_match(result.value, rx)) {
             result.value = "";
             result.type = "NULL";
           }
-        } catch (const std::regex_error&) {
-          // Invalid regex, treat as failed match
+        } catch (const std::regex_error &) {
+
           result.value = "";
           result.type = "NULL";
         }
@@ -312,21 +309,6 @@ int main(int argc, char **argv, char **envp) {
         std::cout << delimiter;
     }
     std::cout << std::endl;
-  }
-
-  if (variableSearch && !tempFilePath.empty()) {
-    if (std::filesystem::exists(tempFilePath)) {
-      auto fsize = std::filesystem::file_size(tempFilePath);
-      if (debugLogging)
-        spdlog::debug(std::string("[variable-search] Cleaning up temp file: ") +
-                      tempFilePath + ", size: " + std::to_string(fsize));
-    } else {
-      if (debugLogging)
-        spdlog::debug(
-            std::string("[variable-search] Temp file not found for cleanup: ") +
-            tempFilePath);
-    }
-    std::remove(tempFilePath.c_str());
   }
 
   return nullCount > 0 ? 1 : 0;
