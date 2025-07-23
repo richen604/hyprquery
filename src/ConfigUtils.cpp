@@ -8,6 +8,49 @@
 
 namespace hyprquery {
 
+std::vector<QueryInput>
+parseQueryInputs(const std::vector<std::string> &rawQueries) {
+  std::vector<QueryInput> queries;
+  for (size_t i = 0; i < rawQueries.size(); ++i) {
+    QueryInput qi;
+    qi.index = i;
+    const std::string &raw = rawQueries[i];
+    size_t firstBracket = raw.find('[');
+    if (firstBracket == std::string::npos) {
+      qi.query = raw;
+      qi.isDynamicVariable = !qi.query.empty() && qi.query[0] == '$';
+      queries.push_back(qi);
+      continue;
+    }
+    qi.query = raw.substr(0, firstBracket);
+    qi.isDynamicVariable = !qi.query.empty() && qi.query[0] == '$';
+    size_t secondBracket = raw.find(']', firstBracket);
+    if (secondBracket == std::string::npos) {
+      qi.expectedType = "";
+      queries.push_back(qi);
+      continue;
+    }
+    qi.expectedType =
+        raw.substr(firstBracket + 1, secondBracket - firstBracket - 1);
+    size_t thirdBracket = raw.find('[', secondBracket);
+    if (thirdBracket == std::string::npos) {
+      qi.expectedRegex = "";
+      queries.push_back(qi);
+      continue;
+    }
+    size_t fourthBracket = raw.find(']', thirdBracket);
+    if (fourthBracket == std::string::npos) {
+      qi.expectedRegex = "";
+      queries.push_back(qi);
+      continue;
+    }
+    qi.expectedRegex =
+        raw.substr(thirdBracket + 1, fourthBracket - thirdBracket - 1);
+    queries.push_back(qi);
+  }
+  return queries;
+}
+
 void ConfigUtils::addConfigValuesFromSchema(Hyprlang::CConfig &config,
                                             const std::string &schemaFilePath) {
   std::ifstream schemaFile(schemaFilePath);
@@ -192,6 +235,12 @@ std::string ConfigUtils::normalizePath(const std::string &path) {
   }
 
   return fsPath.lexically_normal().string();
+}
+
+std::string normalizeType(const std::string &type) {
+  std::string out = type;
+  std::transform(out.begin(), out.end(), out.begin(), ::toupper);
+  return out;
 }
 
 } // namespace hyprquery
