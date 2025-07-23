@@ -5,6 +5,7 @@
 #include <functional>
 #include <hyprlang.hpp>
 #include <nlohmann/json.hpp>
+#include <regex>
 #include <spdlog/spdlog.h>
 
 // TODO: Handle config injection correctly
@@ -32,6 +33,8 @@ int main(int argc, char **argv, char **envp) {
   bool followSource = false;
   bool debugLogging = false;
   std::string delimiter = "\n";
+  std::vector<std::string> expectedTypes;
+  std::vector<std::string> expectedRegexes;
 
   app.add_option("--query,-Q", queries,
                  "Query to execute (can be specified multiple times)")
@@ -48,6 +51,8 @@ int main(int argc, char **argv, char **envp) {
   app.add_flag("--debug", debugLogging, "Enable debug logging");
   app.add_option("--delimiter,-D", delimiter,
                  "Delimiter for plain output (default: newline)");
+  app.add_option("--type,-T", expectedTypes, "Expected type for each query (optional, matches order of -Q)");
+  app.add_option("--expect-regex,-R", expectedRegexes, "Expected regex for each query (optional, matches order of -Q)");
 
   bool variableSearch = false;
 
@@ -199,6 +204,29 @@ int main(int argc, char **argv, char **envp) {
       std::any value = pConfig->getConfigValue(lookupKey.c_str());
       result.value = hyprquery::ConfigUtils::convertValueToString(value);
       result.type = hyprquery::ConfigUtils::getValueTypeName(value);
+
+      // Type check
+      if (!expectedTypes.empty() && i < expectedTypes.size() && !expectedTypes[i].empty()) {
+        if (result.type != expectedTypes[i]) {
+          result.value = "";
+          result.type = "NULL";
+        }
+      }
+      // Regex check
+      if (!expectedRegexes.empty() && i < expectedRegexes.size() && !expectedRegexes[i].empty()) {
+        try {
+          std::regex rx(expectedRegexes[i]);
+          if (!std::regex_match(result.value, rx)) {
+            result.value = "";
+            result.type = "NULL";
+          }
+        } catch (const std::regex_error&) {
+          // Invalid regex, treat as failed match
+          result.value = "";
+          result.type = "NULL";
+        }
+      }
+
       jsonArr.push_back({{"key", result.key},
                          {"val", result.value},
                          {"type", result.type},
@@ -238,6 +266,29 @@ int main(int argc, char **argv, char **envp) {
       std::any value = pConfig->getConfigValue(lookupKey.c_str());
       result.value = hyprquery::ConfigUtils::convertValueToString(value);
       result.type = hyprquery::ConfigUtils::getValueTypeName(value);
+
+      // Type check
+      if (!expectedTypes.empty() && i < expectedTypes.size() && !expectedTypes[i].empty()) {
+        if (result.type != expectedTypes[i]) {
+          result.value = "";
+          result.type = "NULL";
+        }
+      }
+      // Regex check
+      if (!expectedRegexes.empty() && i < expectedRegexes.size() && !expectedRegexes[i].empty()) {
+        try {
+          std::regex rx(expectedRegexes[i]);
+          if (!std::regex_match(result.value, rx)) {
+            result.value = "";
+            result.type = "NULL";
+          }
+        } catch (const std::regex_error&) {
+          // Invalid regex, treat as failed match
+          result.value = "";
+          result.type = "NULL";
+        }
+      }
+
       outputs.push_back(result.value);
       if (result.type == "NULL") {
         if (debugLogging)
