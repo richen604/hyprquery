@@ -1,4 +1,6 @@
 #include "ConfigUtils.hpp"
+#include "ExportEnv.hpp"
+#include "ExportJson.hpp"
 #include "SourceHandler.hpp"
 #include <CLI/CLI.hpp>
 #include <filesystem>
@@ -8,14 +10,10 @@
 #include <regex>
 #include <spdlog/spdlog.h>
 
-static Hyprlang::CConfig *pConfig = nullptr;
+using hyprquery::exportEnv;
+using hyprquery::exportJson;
 
-struct QueryResult {
-  std::string key;
-  std::string value;
-  std::string type;
-  std::vector<std::string> flags;
-};
+static Hyprlang::CConfig *pConfig = nullptr;
 
 void prepareConfig(const std::vector<hyprquery::QueryInput> &queries,
                    std::string &configFilePath,
@@ -72,12 +70,12 @@ void prepareConfig(const std::vector<hyprquery::QueryInput> &queries,
   pConfig->commence();
 }
 
-std::vector<QueryResult>
+std::vector<hyprquery::QueryResult>
 executeQueries(const std::vector<hyprquery::QueryInput> &queries,
                const std::vector<std::string> &dynamicVars, bool debugLogging) {
-  std::vector<QueryResult> results;
+  std::vector<hyprquery::QueryResult> results;
   for (size_t i = 0; i < queries.size(); ++i) {
-    QueryResult result;
+    hyprquery::QueryResult result;
     result.key = queries[i].query;
     std::string lookupKey =
         queries[i].isDynamicVariable ? dynamicVars[i] : queries[i].query;
@@ -119,17 +117,21 @@ executeQueries(const std::vector<hyprquery::QueryInput> &queries,
   return results;
 }
 
-void outputResults(const std::vector<QueryResult> &results, bool jsonOutput,
-                   const std::string &delimiter) {
-  if (jsonOutput) {
-    nlohmann::json jsonArr = nlohmann::json::array();
-    for (const auto &result : results) {
-      jsonArr.push_back({{"key", result.key},
-                         {"val", result.value},
-                         {"type", result.type},
-                         {"flags", result.flags}});
+void outputResults(const std::vector<hyprquery::QueryResult> &results,
+                   const std::string &exportFormat,
+                   const std::string &delimiter,
+                   const std::vector<hyprquery::QueryInput> &queries) {
+  if (exportFormat == "json") {
+    hyprquery::exportJson(results);
+  } else if (exportFormat == "env") {
+
+    std::vector<hyprquery::QueryInput> patchedQueries = queries;
+    for (auto &q : patchedQueries) {
+      if (!q.query.empty() && q.query[0] == '$') {
+        q.query = q.query.substr(1);
+      }
     }
-    std::cout << jsonArr.dump(2) << std::endl;
+    hyprquery::exportEnv(results, patchedQueries);
   } else {
     for (size_t i = 0; i < results.size(); ++i) {
       std::cout << (results[i].type == "NULL" ? "" : results[i].value);
@@ -148,10 +150,10 @@ int main(int argc, char **argv) {
   bool allowMissing = false;
   bool getDefaultKeys = false;
   bool strictMode = false;
-  bool jsonOutput = false;
   bool followSource = false;
   bool debugLogging = false;
   std::string delimiter = "\n";
+  std::string exportFormat;
   app.add_option(
          "--query,-Q", rawQueries,
          "Query to execute (format: query[expectedType][expectedRegex], can be "
@@ -164,7 +166,7 @@ int main(int argc, char **argv) {
   app.add_flag("--allow-missing", allowMissing, "Allow missing values");
   app.add_flag("--get-defaults", getDefaultKeys, "Get default keys");
   app.add_flag("--strict", strictMode, "Enable strict mode");
-  app.add_flag("--json,-j", jsonOutput, "Output result in JSON format");
+  app.add_option("--export", exportFormat, "Export format: json or env");
   app.add_flag("--source,-s", followSource, "Follow the source command");
   app.add_flag("--debug", debugLogging, "Enable debug logging");
   app.add_option("--delimiter,-D", delimiter,
@@ -227,13 +229,13 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
-  std::vector<QueryResult> results =
+  std::vector<hyprquery::QueryResult> results =
       executeQueries(queries, dynamicVars, debugLogging);
   int nullCount = 0;
   for (const auto &r : results) {
     if (r.type == "NULL")
       nullCount++;
   }
-  outputResults(results, jsonOutput, delimiter);
+  outputResults(results, exportFormat, delimiter, queries);
   return nullCount > 0 ? 1 : 0;
 }

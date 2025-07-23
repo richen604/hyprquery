@@ -16,6 +16,13 @@ struct QueryInput {
   bool isDynamicVariable = false;
 };
 
+struct QueryResult {
+  std::string key;
+  std::string value;
+  std::string type;
+  std::vector<std::string> flags;
+};
+
 std::string normalizeType(const std::string &type);
 
 std::vector<QueryInput>
