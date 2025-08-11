@@ -28,6 +28,8 @@ set(SOURCES
     src/main.cpp
     src/ConfigUtils.cpp
     src/SourceHandler.cpp
+    src/ExportJson.cpp
+    src/ExportEnv.cpp
 )
 
 # Create executable

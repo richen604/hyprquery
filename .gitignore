@@ -4,4 +4,5 @@ build/
 compile_commands.json
 result
 result-*
-.direnvbin
+.direnv
+bin/
