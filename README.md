@@ -187,7 +187,7 @@ Schema files define the format and default values for configuration options. The
 
 ## License
 
-[MIT License](LICENSE)
+[GPL License](LICENSE)
 
 ## Contributing
 

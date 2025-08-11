@@ -1,70 +1,177 @@
+#include "ConfigUtils.hpp"
+#include "ExportEnv.hpp"
+#include "ExportJson.hpp"
+#include "SourceHandler.hpp"
 #include <CLI/CLI.hpp>
 #include <filesystem>
+#include <functional>
+#include <hyprlang.hpp>
 #include <nlohmann/json.hpp>
+#include <regex>
 #include <spdlog/spdlog.h>
 
-#include "ConfigUtils.hpp"
-#include "SourceHandler.hpp"
-#include <hyprlang.hpp>  // Direct include from the built library
+using hyprquery::exportEnv;
+using hyprquery::exportJson;
 
 static Hyprlang::CConfig *pConfig = nullptr;
 
-struct QueryResult {
-  std::string key;
-  std::string value;
-  std::string type;
-  std::vector<std::string> flags;
-};
-
-void printQueryResultAsJson(const QueryResult &result);
-void printQueryResultAsPlainText(const QueryResult &result);
-
-int main(int argc, char **argv, char **envp) {
-  // Configure spdlog based on LOG_LEVEL environment variable
-  const char *logLevelEnv = std::getenv("LOG_LEVEL");
-  if (logLevelEnv) {
-    std::string logLevelStr(logLevelEnv);
-    if (logLevelStr == "debug") {
-      spdlog::set_level(spdlog::level::debug);
-    } else if (logLevelStr == "info") {
-      spdlog::set_level(spdlog::level::info);
-    } else if (logLevelStr == "warn") {
-      spdlog::set_level(spdlog::level::warn);
-    } else if (logLevelStr == "error") {
-      spdlog::set_level(spdlog::level::err);
-    } else if (logLevelStr == "critical") {
-      spdlog::set_level(spdlog::level::critical);
-    } else {
-      spdlog::set_level(spdlog::level::info); // Default to info level
+void prepareConfig(const std::vector<hyprquery::QueryInput> &queries,
+                   std::string &configFilePath,
+                   Hyprlang::SConfigOptions &options,
+                   std::vector<std::string> &dynamicVars, bool debugLogging) {
+  std::hash<std::string> hasher;
+  bool variableSearch = false;
+  for (const auto &q : queries) {
+    if (q.isDynamicVariable) {
+      variableSearch = true;
+      break;
     }
-  } else {
-    spdlog::set_level(spdlog::level::info); // Default to info level
   }
+  std::string configStream;
+  if (variableSearch) {
+    if (debugLogging)
+      spdlog::debug("[variable-search] Enabled");
+    std::ifstream src(configFilePath);
+    std::ostringstream dst;
+    dst << src.rdbuf();
+    for (size_t i = 0; i < queries.size(); ++i) {
+      if (queries[i].isDynamicVariable) {
+        std::string dynKey =
+            "Dynamic_" + std::to_string(hasher(queries[i].query));
+        std::string dynLine = "\n" + dynKey + "=" + queries[i].query + "\n";
+        dst << dynLine;
+        if (debugLogging)
+          spdlog::debug(std::string("[variable-search] Injecting line: ") +
+                        dynLine.substr(1, dynLine.size() - 2));
+      }
+    }
+    src.close();
+    configStream = dst.str();
+    configFilePath = configStream;
+    options.pathIsStream = true;
+  }
+  dynamicVars.resize(queries.size());
 
+  pConfig = new Hyprlang::CConfig(configFilePath.c_str(), options);
+  for (size_t i = 0; i < queries.size(); ++i) {
+    if (queries[i].isDynamicVariable) {
+      std::string dynKey =
+          "Dynamic_" + std::to_string(hasher(queries[i].query));
+      dynamicVars[i] = dynKey;
+      pConfig->addConfigValue(dynKey.c_str(), (Hyprlang::STRING) "");
+      if (debugLogging)
+        spdlog::debug(std::string("[variable-search] Mapping query '") +
+                      queries[i].query + "' to injected key '" + dynKey + "'");
+    } else {
+      dynamicVars[i] = queries[i].query;
+      pConfig->addConfigValue(queries[i].query.c_str(), (Hyprlang::STRING) "");
+    }
+  }
+  pConfig->commence();
+}
+
+std::vector<hyprquery::QueryResult>
+executeQueries(const std::vector<hyprquery::QueryInput> &queries,
+               const std::vector<std::string> &dynamicVars, bool debugLogging) {
+  std::vector<hyprquery::QueryResult> results;
+  for (size_t i = 0; i < queries.size(); ++i) {
+    hyprquery::QueryResult result;
+    result.key = queries[i].query;
+    std::string lookupKey =
+        queries[i].isDynamicVariable ? dynamicVars[i] : queries[i].query;
+    if (debugLogging)
+      spdlog::debug(std::string("[variable-search] Lookup key for query '") +
+                    queries[i].query + "' is '" + lookupKey + "'");
+    if (debugLogging && queries[i].isDynamicVariable) {
+      spdlog::debug(std::string("[variable-search] Query '") +
+                    queries[i].query + "' lookup key: '" + lookupKey + "'");
+    }
+    std::any value = pConfig->getConfigValue(lookupKey.c_str());
+    result.value = hyprquery::ConfigUtils::convertValueToString(value);
+    result.type = hyprquery::ConfigUtils::getValueTypeName(value);
+    if (queries[i].isDynamicVariable && result.value == queries[i].query) {
+      result.value = "";
+      result.type = "NULL";
+    }
+    if (!queries[i].expectedType.empty()) {
+      if (hyprquery::normalizeType(result.type) !=
+          hyprquery::normalizeType(queries[i].expectedType)) {
+        result.value = "";
+        result.type = "NULL";
+      }
+    }
+    if (!queries[i].expectedRegex.empty()) {
+      try {
+        std::regex rx(queries[i].expectedRegex);
+        if (!std::regex_match(result.value, rx)) {
+          result.value = "";
+          result.type = "NULL";
+        }
+      } catch (const std::regex_error &) {
+        result.value = "";
+        result.type = "NULL";
+      }
+    }
+    results.push_back(result);
+  }
+  return results;
+}
+
+void outputResults(const std::vector<hyprquery::QueryResult> &results,
+                   const std::string &exportFormat,
+                   const std::string &delimiter,
+                   const std::vector<hyprquery::QueryInput> &queries) {
+  if (exportFormat == "json") {
+    hyprquery::exportJson(results);
+  } else if (exportFormat == "env") {
+
+    std::vector<hyprquery::QueryInput> patchedQueries = queries;
+    for (auto &q : patchedQueries) {
+      if (!q.query.empty() && q.query[0] == '$') {
+        q.query = q.query.substr(1);
+      }
+    }
+    hyprquery::exportEnv(results, patchedQueries);
+  } else {
+    for (size_t i = 0; i < results.size(); ++i) {
+      std::cout << (results[i].type == "NULL" ? "" : results[i].value);
+      if (i + 1 < results.size())
+        std::cout << delimiter;
+    }
+    std::cout << std::endl;
+  }
+}
+
+int main(int argc, char **argv) {
   CLI::App app{"hyprquery - A configuration parser for hypr* config files"};
-
-  std::string query;
+  std::vector<std::string> rawQueries;
   std::string configFilePath;
   std::string schemaFilePath;
   bool allowMissing = false;
   bool getDefaultKeys = false;
   bool strictMode = false;
-  bool jsonOutput = false;
   bool followSource = false;
-
-  app.add_option("--query", query, "Query to execute")->required();
+  bool debugLogging = false;
+  std::string delimiter = "\n";
+  std::string exportFormat;
+  app.add_option(
+         "--query,-Q", rawQueries,
+         "Query to execute (format: query[expectedType][expectedRegex], can be "
+         "specified multiple times)")
+      ->required()
+      ->take_all();
   app.add_option("config_file", configFilePath, "Configuration file")
       ->required();
   app.add_option("--schema", schemaFilePath, "Schema file");
   app.add_flag("--allow-missing", allowMissing, "Allow missing values");
   app.add_flag("--get-defaults", getDefaultKeys, "Get default keys");
   app.add_flag("--strict", strictMode, "Enable strict mode");
-  app.add_flag("--json,-j", jsonOutput, "Output result in JSON format");
+  app.add_option("--export", exportFormat, "Export format: json or env");
   app.add_flag("--source,-s", followSource, "Follow the source command");
-
+  app.add_flag("--debug", debugLogging, "Enable debug logging");
+  app.add_option("--delimiter,-D", delimiter,
+                 "Delimiter for plain output (default: newline)");
   CLI11_PARSE(app, argc, argv);
-
-  // Resolve config file path
   configFilePath = hyprquery::ConfigUtils::normalizePath(configFilePath);
   auto resolvedPaths = hyprquery::SourceHandler::resolvePath(configFilePath);
   if (resolvedPaths.empty()) {
@@ -72,21 +179,14 @@ int main(int argc, char **argv, char **envp) {
               << configFilePath << std::endl;
     return 1;
   }
-
   configFilePath = resolvedPaths.front().string();
-
-  // Check if the input config file exists
   if (!std::filesystem::exists(configFilePath)) {
     std::cerr << "Error: Configuration file does not exist: " << configFilePath
               << std::endl;
     return 1;
   }
-
-  // Set the config directory based on the first file
   hyprquery::SourceHandler::setConfigDir(
       std::filesystem::path(configFilePath).parent_path().string());
-
-  // Handle schema path resolution
   if (!schemaFilePath.empty()) {
     schemaFilePath = hyprquery::ConfigUtils::normalizePath(schemaFilePath);
     auto resolvedSchemaPath =
@@ -94,131 +194,48 @@ int main(int argc, char **argv, char **envp) {
     if (!resolvedSchemaPath.empty()) {
       schemaFilePath = resolvedSchemaPath.front().string();
     }
-
-    // Verify schema file exists
     if (!std::filesystem::exists(schemaFilePath)) {
       std::cerr << "Error: Schema file does not exist: " << schemaFilePath
                 << std::endl;
       return 1;
     }
   }
-
-  // Parse variables from the config file before initializing Hyprlang
-  std::map<std::string, std::string> variables =
-      hyprquery::SourceHandler::parseVariablesFromFile(configFilePath);
-
-  // Initialize Hyprlang config
   Hyprlang::SConfigOptions options;
-  
-    options = {
-      .verifyOnly = static_cast<bool>(getDefaultKeys ? 1 : 0), 
-      .allowMissingConfig = static_cast<bool>(1)
-  };
-
-  Hyprlang::CConfig config(configFilePath.c_str(), options);
-  pConfig = &config;
-
-  // Register common config values we expect to see
-  config.addConfigValue("int", (Hyprlang::INT)0);
-  config.addConfigValue("ok", (Hyprlang::INT)0);
-  config.addConfigValue("key", (Hyprlang::STRING) "");
-
-  // Add schema-based config values if schema provided
+  options = {.verifyOnly = static_cast<bool>(getDefaultKeys ? 1 : 0),
+             .allowMissingConfig = static_cast<bool>(1)};
+  std::vector<hyprquery::QueryInput> queries =
+      hyprquery::parseQueryInputs(rawQueries);
+  std::vector<std::string> dynamicVars;
+  prepareConfig(queries, configFilePath, options, dynamicVars, debugLogging);
   if (!schemaFilePath.empty()) {
-    hyprquery::ConfigUtils::addConfigValuesFromSchema(config, schemaFilePath);
+    hyprquery::ConfigUtils::addConfigValuesFromSchema(*pConfig, schemaFilePath);
   }
-
-  // Register the source handler if --source flag is provided
   if (followSource) {
-    spdlog::debug("Registering source handler");
+    if (debugLogging)
+      spdlog::debug("Registering source handler");
     hyprquery::SourceHandler::registerHandler(pConfig);
   }
-
-  // Make sure the variable will be parsed if it's referenced in the config
-  if (!query.empty() && query[0] != '$') {
-    config.addConfigValue(query.c_str(), (Hyprlang::STRING) "UNSET");
+  if (debugLogging) {
+    spdlog::set_level(spdlog::level::debug);
+    spdlog::flush_on(spdlog::level::debug);
+  } else {
+    spdlog::set_level(spdlog::level::off);
   }
-
-  // Start the config parsing process
-  config.commence();
-
-  // Parse the config
-  const auto PARSERESULT = config.parse();
+  const auto PARSERESULT = pConfig->parse();
   if (PARSERESULT.error) {
-    spdlog::debug("Parse error: {}", PARSERESULT.getError());
+    if (debugLogging)
+      spdlog::debug(std::string("Parse error: ") + PARSERESULT.getError());
     if (strictMode) {
       return 1;
     }
   }
-
-  // Initialize result structure
-  QueryResult result;
-  result.key = query;
-
-  // Check if the query is for a variable (starts with $)
-  if (!query.empty() && query[0] == '$') {
-    // First try to get from our local variables (from main config file)
-    auto varIt = variables.find(query);
-    if (varIt != variables.end()) {
-      result.value = varIt->second;
-      result.type = "STRING"; // Variables are typically treated as strings
-    } else {
-      // Check if we can find the variable in the global variable map
-      auto globalVar = hyprquery::SourceHandler::getVariable(query);
-      if (globalVar.has_value()) {
-        result.value = globalVar.value();
-        result.type = "STRING";
-        spdlog::debug("Found variable in sourced file: {} = {}", query,
-                      result.value);
-      } else {
-        // Fallback to Hyprlang's config value lookup
-        std::any value = pConfig->getConfigValue(query.c_str());
-    result.value = hyprquery::ConfigUtils::convertValueToString(value);
-    result.type = hyprquery::ConfigUtils::getValueTypeName(value);
-      }
-    }
-  } else {
-    // Fallback to Hyprlang's config value lookup
-    // Regular config value lookup (non-variable)
-    std::any value = pConfig->getConfigValue(query.c_str());
-    result.value = hyprquery::ConfigUtils::convertValueToString(value);
-    result.type = hyprquery::ConfigUtils::getValueTypeName(value);
- 
+  std::vector<hyprquery::QueryResult> results =
+      executeQueries(queries, dynamicVars, debugLogging);
+  int nullCount = 0;
+  for (const auto &r : results) {
+    if (r.type == "NULL")
+      nullCount++;
   }
-
-  // Output the result
-  if (jsonOutput) {
-    printQueryResultAsJson(result);
-  } else {
-    printQueryResultAsPlainText(result);
-  }
-
-  // If the result is NULL, log it at debug level and return non-zero exit code
-  if (result.type == "NULL") {
-    spdlog::debug("Query '{}' returned NULL", query);
-    return 1;
-  }
-
-  return 0;
-}
-
-void printQueryResultAsJson(const QueryResult &result) {
-  // In JSON mode, we will output NULL results
-  nlohmann::json jsonResult;
-  jsonResult["key"] = result.key;
-  jsonResult["val"] = result.value;
-  jsonResult["type"] = result.type;
-  jsonResult["flags"] = result.flags;
-
-  std::cout << jsonResult.dump(2) << std::endl;
-}
-
-void printQueryResultAsPlainText(const QueryResult &result) {
-  // In plain text mode, don't output anything for NULL results
-  if (result.type == "NULL") {
-    spdlog::debug("Query result is NULL for key: {}", result.key);
-    return;
-  }
-
-  std::cout << result.value << std::endl;
+  outputResults(results, exportFormat, delimiter, queries);
+  return nullCount > 0 ? 1 : 0;
 }
