@@ -2,7 +2,7 @@
   description = "HyprQuery - A command-line utility for querying configuration values from Hyprland";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/ddd1826f294a0ee5fdc198ab72c8306a0ea73aa9";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
