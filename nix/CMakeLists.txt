@@ -48,4 +48,6 @@ target_link_libraries(hyq PRIVATE
     ${SPDLOG_LIBRARIES}
     CLI11::CLI11
     nlohmann_json::nlohmann_json
-) 
+)
+
+install(TARGETS hyq DESTINATION bin)
