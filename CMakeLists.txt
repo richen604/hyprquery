@@ -12,9 +12,19 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SPDLOG REQUIRED spdlog)
 
 include(FetchContent)
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_FMT_EXTERNAL OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.14.1
+)
+FetchContent_MakeAvailable(spdlog)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 
 option(USE_SYSTEM_HYPRLANG "Use system-installed hyprlang instead of FetchContent" OFF)
 
@@ -23,6 +33,7 @@ if(USE_SYSTEM_HYPRLANG)
 else()
     set(HYPRLANG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(HYPRLANG_BUILD_FUZZERS OFF CACHE BOOL "" FORCE)
+    set(HYPRLANG_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
         hyprlang
         GIT_REPOSITORY https://github.com/hyprwm/hyprlang
@@ -64,23 +75,21 @@ add_executable(hyq ${SOURCES})
 if(USE_SYSTEM_HYPRLANG)
     target_include_directories(hyq PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${SPDLOG_INCLUDE_DIRS}
         ${HYPRLANG_INCLUDE_DIRS}
     )
     target_link_libraries(hyq PRIVATE
         ${HYPRLANG_LIBRARIES}
-        ${SPDLOG_LIBRARIES}
+        spdlog::spdlog
         CLI11::CLI11
         nlohmann_json::nlohmann_json
     )
 else()
     target_include_directories(hyq PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${SPDLOG_INCLUDE_DIRS}
     )
     target_link_libraries(hyq PRIVATE
         hyprlang
-        ${SPDLOG_LIBRARIES}
+        spdlog::spdlog
         CLI11::CLI11
         nlohmann_json::nlohmann_json
     )
