@@ -2,24 +2,21 @@
   description = "HyprQuery - A command-line utility for querying configuration values from Hyprland";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/ddd1826f294a0ee5fdc198ab72c8306a0ea73aa9";
-    flake-utils.url = "github:numtide/flake-utils";
+    nixpkgs.url = "github:NixOS/nixpkgs/cad22e7d996aea55ecab064e84834289143e44a0";
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      flake-utils,
     }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
       let
+    system = "x86_64-linux";
         pkgs = nixpkgs.legacyPackages.${system};
         version = builtins.readFile ./VERSION;
       in
       {
-        packages = {
+        packages.${system} = {
           default = self.packages.${system}.hyprquery;
           hyprquery = pkgs.callPackage ./nix/package.nix {
             inherit version;
@@ -60,6 +57,6 @@
             export CMAKE_EXPORT_COMPILE_COMMANDS=ON
           '';
         };
-      }
-    );
+      };
 }
+

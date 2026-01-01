@@ -38,7 +38,8 @@ stdenv.mkDerivation {
   cmakeFlags = [
     "-DCMAKE_BUILD_TYPE=Release"
     "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
-    "-DUSE_SYSTEM_DEPS=ON"
+    "-DUSE_SYSTEM_SPDLOG=ON"
+    "-DUSE_SYSTEM_HYPRLANG=ON"
   ];
 
   meta = with lib; {

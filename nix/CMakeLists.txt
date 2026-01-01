@@ -2,28 +2,71 @@ cmake_minimum_required(VERSION 3.19)
 
 project(hyprquery LANGUAGES CXX VERSION 0.1.0)
 
-# Enable compile commands export for clangd and other tools
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Configure output directories
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
-# Use system dependencies (this is the Nix build)
-set(USE_SYSTEM_DEPS ON)
-
-# Find required packages
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SPDLOG REQUIRED spdlog)
-pkg_check_modules(HYPRLANG REQUIRED hyprlang)
-find_package(CLI11 REQUIRED)
-find_package(nlohmann_json REQUIRED)
 
-# Add source files
+include(FetchContent)
+
+option(USE_SYSTEM_SPDLOG "Use system-installed spdlog instead of FetchContent" OFF)
+option(USE_SYSTEM_HYPRLANG "Use system-installed hyprlang instead of FetchContent" OFF)
+
+if(USE_SYSTEM_SPDLOG)
+    pkg_check_modules(SPDLOG REQUIRED spdlog)
+else()
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_FMT_EXTERNAL OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        spdlog
+        GIT_REPOSITORY https://github.com/gabime/spdlog.git
+        GIT_TAG        v1.14.1
+    )
+    FetchContent_MakeAvailable(spdlog)
+    set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+endif()
+
+if(USE_SYSTEM_HYPRLANG)
+    pkg_check_modules(HYPRLANG REQUIRED hyprlang)
+else()
+    set(HYPRLANG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(HYPRLANG_BUILD_FUZZERS OFF CACHE BOOL "" FORCE)
+    set(HYPRLANG_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        hyprlang
+        GIT_REPOSITORY https://github.com/hyprwm/hyprlang
+        GIT_TAG v0.6.3  
+    )
+    FetchContent_MakeAvailable(hyprlang)
+endif()
+
+find_package(CLI11 QUIET)
+if (NOT CLI11_FOUND)
+    FetchContent_Declare(
+        CLI11
+        GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+        GIT_TAG        v2.5.0
+    )
+    FetchContent_MakeAvailable(CLI11)
+endif()
+
+find_package(nlohmann_json QUIET)
+if (NOT nlohmann_json_FOUND)
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG        v3.12.0
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
 set(SOURCES
     src/main.cpp
     src/ConfigUtils.cpp
@@ -32,22 +75,53 @@ set(SOURCES
     src/ExportEnv.cpp
 )
 
-# Create executable
 add_executable(hyq ${SOURCES})
 
-# Include directories
-target_include_directories(hyq PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${SPDLOG_INCLUDE_DIRS}
-    ${HYPRLANG_INCLUDE_DIRS}
-)
-
-# Link libraries
-target_link_libraries(hyq PRIVATE
-    ${HYPRLANG_LIBRARIES}
-    ${SPDLOG_LIBRARIES}
-    CLI11::CLI11
-    nlohmann_json::nlohmann_json
-)
-
+# Install target
 install(TARGETS hyq DESTINATION bin)
+
+if(USE_SYSTEM_HYPRLANG AND USE_SYSTEM_SPDLOG)
+    target_include_directories(hyq PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${HYPRLANG_INCLUDE_DIRS}
+        ${SPDLOG_INCLUDE_DIRS}
+    )
+    target_link_libraries(hyq PRIVATE
+        ${HYPRLANG_LIBRARIES}
+        ${SPDLOG_LIBRARIES}
+        CLI11::CLI11
+        nlohmann_json::nlohmann_json
+    )
+elseif(USE_SYSTEM_HYPRLANG)
+    target_include_directories(hyq PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${HYPRLANG_INCLUDE_DIRS}
+    )
+    target_link_libraries(hyq PRIVATE
+        ${HYPRLANG_LIBRARIES}
+        spdlog::spdlog
+        CLI11::CLI11
+        nlohmann_json::nlohmann_json
+    )
+elseif(USE_SYSTEM_SPDLOG)
+    target_include_directories(hyq PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${SPDLOG_INCLUDE_DIRS}
+    )
+    target_link_libraries(hyq PRIVATE
+        hyprlang
+        ${SPDLOG_LIBRARIES}
+        CLI11::CLI11
+        nlohmann_json::nlohmann_json
+    )
+else()
+    target_include_directories(hyq PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(hyq PRIVATE
+        hyprlang
+        spdlog::spdlog
+        CLI11::CLI11
+        nlohmann_json::nlohmann_json
+    )
+endif()
